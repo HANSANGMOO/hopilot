@@ -1,14 +1,20 @@
+import logging
 import uvicorn
 from fastapi import FastAPI
 
 # 의존성 모듈들 임포트
-from api.copilot_handler import CopilotHandler
-from controller.app_controller import AppController
+from controller.handlers import CopilotHandler
+from controller import AppController
+from utils import setup_logger
 
 def bootstrap_app() -> FastAPI:
     """
     DI Container 역할: 앱의 모든 객체를 생성하고 최상위에서 조립(Wiring)합니다.
     """
+    # 0. 전역 로거 초기화 (앱 부팅 시 단 한 번 실행)
+    logger = setup_logger(level=logging.INFO)
+    logger.info("Hopilot Backend Bootstrapping Started...")
+    
     app = FastAPI(title="Hopilot Backend")
     
     # 1. 의존성 객체 생성 (하위 계층부터 조립)
