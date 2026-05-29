@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tests
+tests/scratch/
+
+# Node
+node_modules
+
+# Electron build output
+out/
+dist-electron/
+
+# TypeScript
+*.tsbuildinfo
