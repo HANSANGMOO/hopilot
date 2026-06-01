@@ -1,5 +1,5 @@
 from core.event_bus import BaseEvent
-from core.models.dto import HOChunk
+from core.models import HOChunk
 
 class ChunkGenerationEvent(BaseEvent):
     """

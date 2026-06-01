@@ -36,11 +36,11 @@ class StreamPayload(PayloadBase):
 
 # Union type to allow any specific payload type
 Payload = Union[
-    TextPayload, 
-    ImagePayload, 
-    ThoughtPayload, 
-    ToolCallPayload, 
-    ToolOutputPayload, 
+    TextPayload,
+    ImagePayload,
+    ThoughtPayload,
+    ToolCallPayload,
+    ToolOutputPayload,
     StreamPayload
 ]
 
