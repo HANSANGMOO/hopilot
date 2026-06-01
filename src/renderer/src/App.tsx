@@ -1,113 +1,45 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
+import Sidebar from './components/layout/Sidebar'
+import ChatWindow from './components/chat/ChatWindow'
+import ChatInput from './components/chat/ChatInput'
+import WelcomeScreen from './components/chat/WelcomeScreen'
+import { Message } from './types/chat'
 
-interface Message {
-  id: string
-  role: 'user' | 'ai'
-  content: string
-  timestamp: string
-}
-
-function App(): JSX.Element {
+function App() {
+  // 메시지를 빈 배열로 초기화합니다.
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'msg-1',
-      role: 'ai',
-      content: 'Hello! I am Hopilot, your advanced agentic AI coding assistant. How can I help you today?',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-  ])
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // 텍스트를 받아서 전송하는 로직 (버튼 클릭이나 엔터, 또는 추천 검색어 클릭 시)
+  const handleSend = (text?: string) => {
+    const textToSend = text || input
+    if (!textToSend.trim()) return
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    const newUserMsg: Message = { id: Date.now(), role: 'user', content: textToSend }
+    setMessages((prev) => [...prev, newUserMsg])
 
-  const handleSend = () => {
-    if (!input.trim()) return
+    // 직접 입력한 경우에만 인풋창을 비웁니다.
+    if (!text) setInput('')
 
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      role: 'user',
-      content: input,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-
-    setMessages((prev) => [...prev, newMessage])
-    setInput('')
-
-    // Mock AI Response
     setTimeout(() => {
-      const aiResponse: Message = {
-        id: `msg-${Date.now() + 1}`,
+      const mockAiMsg: Message = {
+        id: Date.now() + 1,
         role: 'ai',
-        content: "That's an interesting point! Since we haven't connected the backend yet, I'm just echoing a placeholder response. Let's wire up the WebSocket next!",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        content: `입력하신 **"${textToSend}"** 에 대한 답변입니다!\n\n\`\`\`javascript\nconsole.log("Welcome Screen 적용 완료!");\n\`\`\``
       }
-      setMessages((prev) => [...prev, aiResponse])
-    }, 800)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
+      setMessages((prev) => [...prev, mockAiMsg])
+    }, 1000)
   }
 
   return (
-    <div className="chat-container">
-      {/* Header */}
-      <header className="chat-header">
-        <h1>Hopilot</h1>
-        <div className="status-indicator">
-          <div className="pulse"></div>
-          <span>Ready (Local)</span>
-        </div>
-      </header>
+    <div className="flex h-screen w-full bg-[#0d1117] font-sans text-gray-200">
+      <Sidebar />
+      <main className="relative flex flex-1 flex-col overflow-hidden bg-[#0d1117]">
+        {/* 대화 기록이 없으면 초기 화면을, 있으면 채팅창을 렌더링합니다. */}
+        {messages.length === 0 ? <WelcomeScreen /> : <ChatWindow messages={messages} />}
 
-      {/* Messages Area */}
-      <main className="messages-area">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`message-wrapper ${msg.role}`}>
-            <span className="message-time">
-              {msg.role === 'user' ? 'You' : 'Hopilot'} • {msg.timestamp}
-            </span>
-            <div className="message-bubble">
-              {msg.content}
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+        <ChatInput input={input} setInput={setInput} onSend={() => handleSend()} />
       </main>
-
-      {/* Input Area */}
-      <footer className="input-area">
-        <div className="input-wrapper">
-          <input
-            type="text"
-            className="chat-input"
-            placeholder="Send a message to Hopilot..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          <button 
-            className="send-button" 
-            onClick={handleSend}
-            disabled={!input.trim()}
-          >
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
-        </div>
-      </footer>
     </div>
   )
 }
