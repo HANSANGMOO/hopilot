@@ -3,6 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
+import { FastAPIClient } from './fastapi_client'
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -16,6 +18,11 @@ function createWindow(): void {
       sandbox: false
     }
   })
+
+  // FastAPI 클라이언트 생성 및 실행
+  const apiClient = new FastAPIClient()
+  apiClient.attachWebContents(mainWindow.webContents)
+  apiClient.connect()
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

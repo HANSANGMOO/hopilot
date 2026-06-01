@@ -1,8 +1,11 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  // React에서 HOSignal을 쏘면 이 함수가 받아서 Main 프로세스('ho-signal')로 토스합니다.
+  sendSignal: (signal: any) => ipcRenderer.send('ho-signal', signal)
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
