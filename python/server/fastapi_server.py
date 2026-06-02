@@ -4,7 +4,8 @@ from typing import Optional
 from utils import get_logger
 
 from core.channel import Channel
-from core.event_bus import EventBus
+from core.bus import EventBus, SignalBus
+from contracts.copilot import SendUserRequestSignal
 
 logger = get_logger("FastAPIServer")
 
@@ -14,9 +15,10 @@ class FastAPIServer:
     순수 비즈니스 로직(Engine, Service)을 알지 못하며, 오직 웹소켓 연결과 Channel 생성을 담당합니다.
     """
     
-    def __init__(self, event_bus: EventBus):
+    def __init__(self, event_bus: EventBus, signal_bus: SignalBus):
         self.app = FastAPI(title="Hopilot Backend")
         self.event_bus = event_bus
+        self.signal_bus = signal_bus
         self.channel: Optional[Channel] = None
         
         self._register_routes()
@@ -39,9 +41,13 @@ class FastAPIServer:
                 async for payload in self.channel.listen():
                     logger.debug(f"웹소켓 수신 -> Channel 배출: {payload}")
                     
-                    # 3. 수신된 데이터를 내부 EventBus로 전달 (Publish)
-                    # TODO: payload(Dict)를 적절한 Event DTO로 파싱하여 퍼블리싱하는 로직 추가
-                    # self.event_bus.publish(SomeEvent(data=payload))
+                    # 3. 수신된 데이터를 Pydantic 시그널 객체로 파싱하여 SignalBus에 Publish
+                    signal_type = payload.get("type")
+                    if signal_type == "SendUserRequestSignal":
+                        signal = SendUserRequestSignal(**payload)
+                        self.signal_bus.emit(signal)
+                    else:
+                        logger.warning(f"알 수 없는 시그널 타입 수신: {signal_type}")
                     
             except WebSocketDisconnect:
                 logger.info("프론트엔드 웹소켓 연결 종료됨.")

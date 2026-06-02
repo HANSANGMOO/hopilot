@@ -56,7 +56,7 @@ class HOChunk(BaseModel):
 # ==========================================
 class HOMessage(BaseModel):
     message_id: str
-    role: str = Field(..., description="'user', 'assistant', or 'system'")
+    role: str = Field(..., description="'user', 'ai', or 'system'")
     payloads: List[Payload] = Field(default_factory=list, description="Ordered list of payloads comprising this message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
@@ -77,3 +77,25 @@ class HOSession(BaseModel):
     messages: List[HOMessage] = Field(default_factory=list, description="Full chat history of the session")
     settings: dict = Field(default_factory=dict, description="Session-specific settings (e.g., target model, temperature)")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==========================================
+# Data Transfer Objects (DTOs)
+# ==========================================
+class CopilotRequestDTO(BaseModel):
+    """
+    Handler 계층에서 Service 계층으로 데이터를 넘길 때 사용하는 순수 데이터 전송 객체입니다.
+    """
+    session_id: str
+    query: str
+
+class CopilotRequest(BaseModel):
+    """
+    Service/Engine 계층에서 처리되는 내부 도메인 모델입니다.
+    """
+    session_id: str
+    system_instructions: str
+    history: List[HOMessage] = Field(default_factory=list)
+    context: dict = Field(default_factory=dict)
+    query: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
