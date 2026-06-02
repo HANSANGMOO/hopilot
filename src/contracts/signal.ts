@@ -2,7 +2,7 @@
  * 프론트엔드(Electron)와 백엔드(Python) 간의 통신(웹소켓 등)에서
  * 가장 기본이 되는 최상위 시그널(이벤트) 인터페이스입니다.
  */
-export interface HOSignalBase {
+export interface BaseSignal {
   /**
    * 시그널의 고유 이름 (라우팅 식별자)
    * 파이썬 객체 이름과 일치해야 합니다.
@@ -50,7 +50,7 @@ export function defineSignal<Payload = void>(type: string) {
     }
 
     // 최종적으로 HOSignalBase와 개발자가 넘겨준 Payload 타입이 결합된 객체로 인식하게 만듭니다.
-    return signal as HOSignalBase & Payload
+    return signal as BaseSignal & Payload
   }
 }
 
