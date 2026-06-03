@@ -45,9 +45,9 @@ export default function WelcomeScreen() {
       >
         {/* 디테일을 다 빼고, 얼굴 형태와 눈 2개만 남긴 미니멀 로봇 */}
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#161b22] border border-gray-700/50 shadow-sm">
-          <div className="flex space-x-3">
-            <div className={`w-2.5 bg-blue-400 rounded-full transition-all duration-150 ${isBlinking ? 'h-0.5' : 'h-2.5'}`}></div>
-            <div className={`w-2.5 bg-blue-400 rounded-full transition-all duration-150 ${isBlinking ? 'h-0.5' : 'h-2.5'}`}></div>
+          <div className="flex space-x-4">
+            <div className={`w-2.5 bg-blue-400 rounded-xl transition-all duration-200 ${isBlinking ? 'h-0.5' : 'h-2.5'}`}></div>
+            <div className={`w-2.5 bg-blue-400 rounded-xl transition-all duration-200 ${isBlinking ? 'h-0.5' : 'h-2.5'}`}></div>
           </div>
         </div>
       </div>
