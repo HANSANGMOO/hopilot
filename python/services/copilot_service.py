@@ -1,6 +1,6 @@
 import uuid
 import asyncio
-from core.models import CopilotRequestDTO, HOMessage, TextPayload, HOChunk
+from core.models import CopilotInput, HOMessage, TextPayload, HOChunk
 from contracts.copilot import ChunkGenerationEvent
 from core.bus import EventBus
 from api.api_manager import ApiManager
@@ -19,7 +19,7 @@ class CopilotService:
         self.request_engine = request_engine
         self.agent_worker = agent_worker
         
-    async def process_user_request(self, dto: CopilotRequestDTO):
+    async def process_user_request(self, dto: CopilotInput):
         """
         사용자의 요청을 받아 시스템 메시지와 사용자 메시지를 생성하고 내부 이벤트를 발생시킵니다.
         """
@@ -31,7 +31,7 @@ class CopilotService:
         self.event_bus.publish(ChunkGenerationEvent(
             chunk=user_chunk,
             msg_id=user_msg_id,
-            session_id=dto.session_id,
+            session_id=dto.session.session_id,
             role="user"
         ))
         
@@ -43,7 +43,7 @@ class CopilotService:
         self.event_bus.publish(ChunkGenerationEvent(
             chunk=system_chunk,
             msg_id=system_msg_id,
-            session_id=dto.session_id,
+            session_id=dto.session.session_id,
             role="system"
         ))
         

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Union
+from typing import List, Optional, Any, Union, Literal, Annotated
 from datetime import datetime
 import json
 
@@ -13,39 +13,42 @@ class PayloadBase(BaseModel):
     type: str
 
 class TextPayload(PayloadBase):
-    type: str = "text"
+    type: Literal["text"] = "text"
     text: str
 
 class ImagePayload(PayloadBase):
-    type: str = "image"
+    type: Literal["image"] = "image"
     image_url: str  # URL or base64 encoded string
 
 class ThoughtPayload(PayloadBase):
-    type: str = "thought"
+    type: Literal["thought"] = "thought"
     thought: str
 
 class ToolCallPayload(PayloadBase):
-    type: str = "tool_call"
+    type: Literal["tool_call"] = "tool_call"
     tool_name: str
     tool_args: dict
 
 class ToolOutputPayload(PayloadBase):
-    type: str = "tool_output"
+    type: Literal["tool_output"] = "tool_output"
     tool_name: str
     output: str
 
 class StreamPayload(PayloadBase):
-    type: str = "stream_end"
+    type: Literal["stream_end"] = "stream_end"
     finish_reason: Optional[str] = None
 
 # Union type to allow any specific payload type
-Payload = Union[
-    TextPayload,
-    ImagePayload,
-    ThoughtPayload,
-    ToolCallPayload,
-    ToolOutputPayload,
-    StreamPayload
+Payload = Annotated[
+    Union[
+        TextPayload,
+        ImagePayload,
+        ThoughtPayload,
+        ToolCallPayload,
+        ToolOutputPayload,
+        StreamPayload
+    ],
+    Field(discriminator="type")
 ]
 
 # ==========================================
@@ -124,12 +127,18 @@ class HOSession(BaseModel):
 # ==========================================
 # Data Transfer Objects (DTOs)
 # ==========================================
-class CopilotRequestDTO(BaseModel):
+class CopilotInput(BaseModel):
     """
     Handler 계층에서 Service 계층으로 데이터를 넘길 때 사용하는 순수 데이터 전송 객체입니다.
     """
-    session_id: str
+    session: HOSession
     query: str
+    model: Optional[str] = None
+    tools: Optional[List[str]] = None
+    context: Optional[dict] = None
+
+class CopilotTask(BaseModel):
+    pass
 
 class CopilotRequest(BaseModel):
     """

@@ -2,7 +2,7 @@ import uuid
 from typing import Callable, AsyncGenerator, Awaitable, List
 from utils import get_logger
 from core.bus import EventBus
-from core.models import CopilotRequestDTO, HOMessage, HOChunk
+from core.models import CopilotInput, HOMessage, HOChunk
 from contracts.copilot import ChunkGenerationEvent
 
 logger = get_logger("AgentWorker")
@@ -18,15 +18,15 @@ class AgentWorker:
 
     async def run(
         self, 
-        dto: CopilotRequestDTO, 
-        request_builder: Callable[[CopilotRequestDTO], Awaitable[List[HOMessage]]], 
+        dto: CopilotInput, 
+        request_builder: Callable[[CopilotInput], Awaitable[List[HOMessage]]], 
         stream_opener: Callable[[List[HOMessage]], AsyncGenerator[HOChunk, None]]
     ):
         """
         DTO와 두 개의 콜백(프롬프트 조립, 스트림 오픈)을 받아 
         실시간으로 Chunk를 생성하고 EventBus로 퍼블리시합니다.
         """
-        logger.info(f"[AgentWorker] 스트리밍 시작 - 세션: {dto.session_id}")
+        logger.info(f"[AgentWorker] 스트리밍 시작 - 세션: {dto.session.session_id}")
         
         try:
             # 1. 프롬프트 조립 콜백 실행 (Request Engine 위임)
@@ -40,11 +40,11 @@ class AgentWorker:
                 self.event_bus.publish(ChunkGenerationEvent(
                     chunk=chunk,
                     msg_id=msg_id,
-                    session_id=dto.session_id,
+                    session_id=dto.session.session_id,
                     role="ai"
                 ))
                 
-            logger.info(f"[AgentWorker] 스트리밍 완료 - 세션: {dto.session_id}")
+            logger.info(f"[AgentWorker] 스트리밍 완료 - 세션: {dto.session.session_id}")
             
         except Exception as e:
             logger.error(f"[AgentWorker] 스트리밍 중 에러 발생: {e}")
