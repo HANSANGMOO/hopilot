@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable, Dict, List, Type, TypeVar, Awaitable, Generic
+from typing import Callable, Dict, List, Type, TypeVar, Awaitable, Generic, Any
 from pydantic import BaseModel
 from contracts.signal import BaseSignal
 
@@ -73,6 +73,7 @@ class SignalBus(BaseMessageBus[BaseSignal]):
     """
     def __init__(self):
         super().__init__("SignalBus")
+        self._invokers: Dict[Type[BaseSignal], Callable[[BaseSignal], Awaitable[Any]]] = {}
 
     def connect(self, signal_type: Type[BaseSignal], slot_func: Callable[[BaseSignal], Awaitable[None]]):
         self.add_listener(signal_type, slot_func)
@@ -88,3 +89,18 @@ class SignalBus(BaseMessageBus[BaseSignal]):
             self.connect(signal_type, slot_func)
             return slot_func
         return decorator
+
+    def handle(self, signal_type: Type[BaseSignal], handler: Callable[[BaseSignal], Awaitable[Any]]):
+        """특정 시그널에 대해 결과값을 반환하는 1:1 비동기 핸들러를 등록합니다."""
+        if signal_type in self._invokers:
+            raise ValueError(f"'{signal_type.__name__}'에 대한 핸들러가 이미 존재합니다.")
+        self._invokers[signal_type] = handler
+
+    async def invoke(self, signal: BaseSignal) -> Any:
+        """시그널을 발생시키고 등록된 핸들러의 결과(예: AsyncGenerator)를 기다려 반환합니다."""
+        signal_type = type(signal)
+        if signal_type not in self._invokers:
+            raise ValueError(f"'{signal_type.__name__}'을(를) 처리할 핸들러가 등록되지 않았습니다.")
+        
+        handler = self._invokers[signal_type]
+        return await handler(signal)
