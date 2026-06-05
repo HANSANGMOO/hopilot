@@ -1,9 +1,7 @@
-import uuid
-from typing import Callable, AsyncGenerator, Awaitable, List
 from utils import get_logger
 from core.bus import EventBus
-from core.models import CopilotInput, HOMessage, HOChunk
-from contracts.copilot import ChunkGenerationEvent
+from core.models import CopilotTask, CopilotRequest, HOMessage, HOChunk
+from contracts.copilot import CopilotChunkDTO, AgentCallbacks
 
 logger = get_logger("AgentWorker")
 
@@ -18,33 +16,38 @@ class AgentWorker:
 
     async def run(
         self, 
-        dto: CopilotInput, 
-        request_builder: Callable[[CopilotInput], Awaitable[List[HOMessage]]], 
-        stream_opener: Callable[[List[HOMessage]], AsyncGenerator[HOChunk, None]]
+        task: CopilotTask, 
+        callbacks: AgentCallbacks
     ):
         """
-        DTO와 두 개의 콜백(프롬프트 조립, 스트림 오픈)을 받아 
-        실시간으로 Chunk를 생성하고 EventBus로 퍼블리시합니다.
+        Task와 콜백 인터페이스(AgentCallbacks)를 받아 
+        실시간으로 Chunk를 생성하고 AsyncGenerator 형태로 배출(yield)합니다.
         """
-        logger.info(f"[AgentWorker] 스트리밍 시작 - 세션: {dto.session.session_id}")
+        logger.info(f"[AgentWorker] 스트리밍 시작 - 태스크: {task.task_id}")
         
         try:
             # 1. 프롬프트 조립 콜백 실행 (Request Engine 위임)
-            request = await request_builder(dto)
+            request = await callbacks.build_request(task)
             
-            # 2. 메시지 고유 ID (생성되는 모든 청크가 이 ID를 공유)
-            msg_id = str(uuid.uuid4())
+            # 2. task.react에 담긴 마지막 메시지(AI Placeholder)와 세션 객체 획득
+            ai_message = task.react.messages[-1]
+            session = task.input_dto.session
             
             # 3. 스트림 오픈 콜백 실행 및 순회 (Api Manager 위임)
-            async for chunk in stream_opener(request):
-                self.event_bus.publish(ChunkGenerationEvent(
-                    chunk=chunk,
-                    msg_id=msg_id,
-                    session_id=dto.session.session_id,
-                    role="ai"
-                ))
+            async for chunk in callbacks.stream_opener(request):
                 
-            logger.info(f"[AgentWorker] 스트리밍 완료 - 세션: {dto.session.session_id}")
+                # 4. 부모 메시지의 chunks 리스트에 방금 온 조각 추가 (상태 업데이트)
+                ai_message.chunks.append(chunk)
+                
+                # 5. 프론트엔드 라우팅 정보를 포함한 DTO 조립 및 배출
+                yield CopilotChunkDTO(
+                    chunk=chunk,
+                    msg_id=ai_message.message_id,
+                    session_id=session.session_id,
+                    role=ai_message.role
+                )
+                
+            logger.info(f"[AgentWorker] 스트리밍 완료 - 태스크: {task.task_id}")
             
         except Exception as e:
             logger.error(f"[AgentWorker] 스트리밍 중 에러 발생: {e}")

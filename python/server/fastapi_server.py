@@ -45,7 +45,13 @@ class FastAPIServer:
                     signal_type = payload.get("type")
                     if signal_type == "SendUserRequestSignal":
                         signal = SendUserRequestSignal(**payload)
-                        self.signal_bus.emit(signal)
+                        # 4. SignalBus.invoke를 통해 AsyncGenerator를 반환받음
+                        stream = await self.signal_bus.invoke(signal)
+                        
+                        # 5. 스트림에서 생성되는 청크를 즉시 웹소켓 채널로 전송
+                        async for chunk in stream:
+                            # HOChunk 모델을 dict로 변환하여 전송
+                            await self.channel.send(chunk.model_dump())
                     else:
                         logger.warning(f"알 수 없는 시그널 타입 수신: {signal_type}")
                     

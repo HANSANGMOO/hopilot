@@ -2,7 +2,7 @@ from utils import get_logger
 
 import uuid
 from typing import List
-from core.models import CopilotInput, CopilotRequest, HOMessage, TextPayload
+from core.models import CopilotTask, CopilotRequest, HOMessage, TextPayload
 logger = get_logger("RequestEngine")
 
 class RequestEngine:
@@ -13,15 +13,15 @@ class RequestEngine:
     def __init__(self):
         logger.info("RequestEngine initialized.")
 
-    def build_request(self, dto: CopilotInput) -> CopilotRequest:
+    async def build_request(self, task: CopilotTask) -> CopilotRequest:
         """
-        CopilotInput을 받아서 내부 도메인 모델인 CopilotRequest로 변환합니다.
+        CopilotTask를 받아서 내부 도메인 모델인 CopilotRequest로 변환합니다.
         """
         return CopilotRequest(
-            session_id=dto.session.session_id,
+            session_id=task.input_dto.session.session_id,
             system_instructions="당신은 유능한 AI Copilot입니다.",
             history=[],
             context={"type": "default_hardcoded_context"},
-            query=dto.query
+            query=task.input_dto.query
         )
 
