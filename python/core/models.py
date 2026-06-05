@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Union, Literal, Annotated
+from typing import List, Optional, Any, Union, Literal, Annotated, Callable
 from datetime import datetime
 import json
+import uuid
 
 # 도메인 모델의 기준이 되는 현재 스키마 버전 (DB 계층이 이를 참조합니다)
 SCHEMA_VERSION = 1
@@ -51,27 +52,30 @@ Payload = Annotated[
     Field(discriminator="type")
 ]
 
+def generate_id(prefix: str, length: int = 8) -> Callable[[], str]:
+    return lambda: f"{prefix}_{uuid.uuid4().hex[:length]}"
+
 # ==========================================
 # Level 2: HOChunk (단일 Payload 전송 단위)
 # ==========================================
 class HOChunk(BaseModel):
-    chunk_id: str = Field(..., description="Unique identifier for the chunk to ensure ordering")
     payload: Payload = Field(..., description="The single payload carried by this chunk")
 
 # ==========================================
 # Level 3: HOMessage (조립된 단일 메시지 단위)
 # ==========================================
 class HOMessage(BaseModel):
-    message_id: str
+    message_id: str = Field(default_factory=generate_id("msg"))
+    react_id: Optional[str] = Field(default=None, description="Trace ID for the ReAct cycle this message belongs to")
     role: str = Field(..., description="'user', 'ai', or 'system'")
-    payloads: List[Payload] = Field(default_factory=list, description="Ordered list of payloads comprising this message")
+    chunks: List[HOChunk] = Field(default_factory=list, description="Ordered list of chunks comprising this message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # ==========================================
 # Level 4: HOreAct (추론/행동 논리적 묶음)
 # ==========================================
 class HOreAct(BaseModel):
-    step_id: str
+    react_id: str = Field(default_factory=generate_id("rct"))
     messages: List[HOMessage] = Field(default_factory=list, description="Messages belonging to this logical ReAct cycle")
     status: str = Field(default="pending", description="'pending', 'running', 'completed', or 'failed'")
 
@@ -79,7 +83,7 @@ class HOreAct(BaseModel):
 # Level 5: HOSession (전체 대화 세션)
 # ==========================================
 class HOSession(BaseModel):
-    session_id: str
+    session_id: str = Field(default_factory=generate_id("sess"))
     title: str = Field(default="New Session")
     messages: List[HOMessage] = Field(default_factory=list, description="Full chat history of the session")
     meta: dict = Field(default_factory=dict, description="Prompt, workspace, tool_list 등 기능적 설정값")
@@ -138,7 +142,9 @@ class CopilotInput(BaseModel):
     context: Optional[dict] = None
 
 class CopilotTask(BaseModel):
-    pass
+    task_id: str = Field(default_factory=generate_id("task"))
+    input_dto: CopilotInput
+    react: HOreAct
 
 class CopilotRequest(BaseModel):
     """

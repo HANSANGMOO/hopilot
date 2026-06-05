@@ -1,4 +1,3 @@
-import uuid
 import logging
 import asyncio
 from datetime import datetime
@@ -23,15 +22,14 @@ class SessionService:
         
     async def create_session(self, title: str = "New Session") -> HOSession:
         """새로운 세션을 생성하고, 메모리에 올린 뒤 DB에 저장합니다."""
-        session_id = f"sess_{uuid.uuid4().hex[:8]}"
-        session = HOSession(session_id=session_id, title=title)
+        session = HOSession(title=title)
         
         # 메모리에 적재
-        self.active_sessions[session_id] = session
+        self.active_sessions[session.session_id] = session
         
         # DB에 초기 상태 저장
         await self.db.create("sessions", session.to_db_dict())
-        logger.info(f"Created new session: {session_id}")
+        logger.info(f"Created new session: {session.session_id}")
         return session
 
     async def get_session(self, session_id: str) -> Optional[HOSession]:
