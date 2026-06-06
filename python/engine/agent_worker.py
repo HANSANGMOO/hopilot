@@ -1,7 +1,6 @@
 from utils import get_logger
 from core.bus import EventBus
-from core.models import CopilotTask, CopilotRequest, HOMessage, HOChunk
-from contracts.copilot import CopilotChunkDTO, AgentCallbacks
+from core.models import CopilotTask, CopilotRequest, HOMessage, HOChunk, AgentCallbacks, CopilotChunkDTO
 
 logger = get_logger("AgentWorker")
 

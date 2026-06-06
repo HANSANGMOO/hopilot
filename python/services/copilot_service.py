@@ -1,6 +1,5 @@
 from typing import AsyncGenerator
-from core.models import CopilotInput, HOMessage, TextPayload, HOChunk, HOreAct, CopilotTask
-from contracts.copilot import CopilotChunkDTO
+from core.models import CopilotInput, HOMessage, TextPayload, HOChunk, HOreAct, CopilotTask, CopilotChunkDTO
 from core.bus import EventBus
 from api.api_manager import ApiManager
 from engine.request_engine import RequestEngine

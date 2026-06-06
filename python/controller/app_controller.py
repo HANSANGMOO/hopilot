@@ -22,4 +22,4 @@ class AppController:
 
     def connect_signals(self):
         """SignalBus를 통해 들어오는 외부 시그널을 각 핸들러의 슬롯에 연결합니다."""
-        self.signal_bus.handle(SendUserRequestSignal, self.copilot_handler.handle_user_request)
+        self.signal_bus.stream_handle(SendUserRequestSignal, self.copilot_handler.handle_user_request)

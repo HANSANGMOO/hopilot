@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Union, Literal, Annotated, Callable
+from typing import List, Optional, Any, Union, Literal, Annotated, Callable, Protocol, AsyncGenerator
 from datetime import datetime
 import json
 import uuid
@@ -156,4 +156,24 @@ class CopilotRequest(BaseModel):
     context: dict = Field(default_factory=dict)
     query: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class AgentCallbacks(Protocol):
+    """AgentWorker가 작업을 수행할 때 호출하는 콜백(포인터)들의 집합입니다."""
+    
+    async def build_request(self, task: CopilotTask) -> CopilotRequest:
+        """CopilotTask를 받아서 LLM API 요청용 모델(CopilotRequest)로 변환합니다."""
+        ...
+        
+    def stream_opener(self, request: CopilotRequest) -> AsyncGenerator[HOChunk, None]:
+        """LLM API 스트림을 열고 실시간 청크를 생성합니다."""
+        ...
+
+class CopilotChunkDTO(BaseModel):
+    """
+    AgentWorker가 내부적으로 생성하여 Handler 계층으로 전달하는 스트리밍 청크 데이터입니다.
+    """
+    chunk: HOChunk
+    msg_id: str
+    session_id: str
+    role: str = Field(..., description="'user', 'ai', or 'system'")
 

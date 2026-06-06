@@ -1,11 +1,12 @@
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from typing import Optional
+import inspect
 from utils import get_logger
 
 from core.channel import Channel
 from core.bus import EventBus, SignalBus
-from contracts.copilot import SendUserRequestSignal
+from contracts.signal import BaseSignal, BaseRequestSignal, BaseEventSignal, BaseStreamSignal
 
 logger = get_logger("FastAPIServer")
 
@@ -41,19 +42,28 @@ class FastAPIServer:
                 async for payload in self.channel.listen():
                     logger.debug(f"웹소켓 수신 -> Channel 배출: {payload}")
                     
-                    # 3. 수신된 데이터를 Pydantic 시그널 객체로 파싱하여 SignalBus에 Publish
-                    signal_type = payload.get("type")
-                    if signal_type == "SendUserRequestSignal":
-                        signal = SendUserRequestSignal(**payload)
-                        # 4. SignalBus.invoke를 통해 AsyncGenerator를 반환받음
-                        stream = await self.signal_bus.invoke(signal)
+                    # 3. 수신된 데이터를 Pydantic 시그널 객체로 동적 파싱
+                    try:
+                        signal = BaseSignal.resolve_signal(payload)
                         
-                        # 5. 스트림에서 생성되는 청크를 즉시 웹소켓 채널로 전송
-                        async for chunk in stream:
-                            # HOChunk 모델을 dict로 변환하여 전송
-                            await self.channel.send(chunk.model_dump())
-                    else:
-                        logger.warning(f"알 수 없는 시그널 타입 수신: {signal_type}")
+                        # 4. 시그널의 상속 계층에 따라 논블로킹 라우팅 분기
+                        if isinstance(signal, BaseStreamSignal):
+                            logger.info(f"스트림 시그널 수신: {type(signal).__name__} (invoke_id={signal.invoke_id})")
+                            self.signal_bus.stream_background(signal, send_callback=self.channel.send)
+                            
+                        elif isinstance(signal, BaseRequestSignal):
+                            logger.info(f"단일 요청 시그널 수신: {type(signal).__name__} (invoke_id={signal.invoke_id})")
+                            self.signal_bus.invoke_background(signal, send_callback=self.channel.send)
+                                
+                        elif isinstance(signal, BaseEventSignal):
+                            logger.info(f"이벤트 시그널 수신: {type(signal).__name__}")
+                            # SignalBus를 통해 단방향 배출
+                            self.signal_bus.emit(signal)
+                            
+                    except ValueError as ve:
+                        logger.warning(f"시그널 파싱 실패: {ve}")
+                    except Exception as e:
+                        logger.error(f"시그널 라우팅 중 예외 발생: {e}", exc_info=True)
                     
             except WebSocketDisconnect:
                 logger.info("프론트엔드 웹소켓 연결 종료됨.")
