@@ -1,0 +1,18 @@
+# LLM Model Configuration
+# 프론트엔드에 노출되고 ApiManager가 라우팅할 LLM 모델 목록을 정의합니다.
+
+models:
+  - id: "gemini-3.1-pro"
+    display_name: "Gemini 3.1 Pro"
+    provider: "gemini"
+    is_default: true
+  
+  - id: "claude-3-5-sonnet"
+    display_name: "Claude 3.5 Sonnet"
+    provider: "claude"
+    is_default: false
+
+  - id: "gpt-4o"
+    display_name: "GPT-4o"
+    provider: "openai"
+    is_default: false
