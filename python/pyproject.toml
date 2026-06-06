@@ -1,0 +1,14 @@
+[tool.ruff]
+target-version = "py311"   # ← 위에서 확인한 버전으로 (3.11이면 py311, 3.10이면 py310...)
+line-length = 100
+exclude = ["__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "F",   # pyflakes ★핵심 — 미사용 import, 정의 안 된 이름(NameError), 미사용 변수
+    "E",   # pycodestyle 에러
+    "W",   # pycodestyle 경고
+    "I",   # isort — import 정렬
+    "B",   # bugbear — 흔한 버그 패턴(가변 기본인자 등)
+]
+ignore = []
