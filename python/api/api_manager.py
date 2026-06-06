@@ -1,6 +1,6 @@
 from typing import List, Any, Dict, AsyncGenerator, Optional
 
-from core.models import HOMessage, HOChunk
+from core.models import CopilotRequest, HOChunk
 from utils import get_logger
 
 from api.provider.base_provider import BaseProvider
@@ -45,7 +45,7 @@ class ApiManager:
 
     async def stream_generate(
         self,
-        messages: List[HOMessage],
+        request: CopilotRequest,
         provider_name: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[HOChunk, None]:
@@ -54,5 +54,5 @@ class ApiManager:
         """
         provider = self.get_provider(provider_name)
         # TODO: 재시도/타임아웃/에러 표준화 등 공통 정책을 이 계층에 추가
-        async for chunk in provider.stream_generate(messages, tools=tools):
+        async for chunk in provider.stream_generate(request, tools=tools):
             yield chunk
