@@ -1,6 +1,8 @@
-import logging
 import inspect
-from typing import Callable, Dict, Type, TypeVar, Generic, AsyncGenerator
+import logging
+from typing import AsyncGenerator, Callable, Dict, Generic, Type, TypeVar
+
+from pydantic import BaseModel
 
 logger = logging.getLogger("StreamBus")
 T = TypeVar('T')
@@ -22,12 +24,12 @@ class BaseStreamBus(Generic[T]):
         msg_type = type(message)
         if msg_type not in self._handlers:
             raise ValueError(f"'{msg_type.__name__}'을(를) 처리할 핸들러가 등록되지 않았습니다.")
-        
+
         handler = self._handlers[msg_type]
-        
+
         if not inspect.isasyncgenfunction(handler):
             raise ValueError(f"'{msg_type.__name__}'의 핸들러는 반드시 비동기 제너레이터 함수(async def + yield)여야 합니다.")
-            
+
         return handler(message)
 
     def on_handle(self, msg_type: Type[T]):
@@ -37,7 +39,7 @@ class BaseStreamBus(Generic[T]):
             return handler
         return decorator
 
-class BaseStream:
+class BaseStream(BaseModel):
     """내부 비즈니스 로직용 스트림 객체의 부모 클래스입니다."""
     pass
 

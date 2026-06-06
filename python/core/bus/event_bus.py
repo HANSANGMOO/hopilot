@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Callable, Dict, List, Type, TypeVar, Awaitable, Generic, Any
+from typing import Awaitable, Callable, Dict, Generic, List, Type, TypeVar
+
 from pydantic import BaseModel
 
 logger = logging.getLogger("EventBus")

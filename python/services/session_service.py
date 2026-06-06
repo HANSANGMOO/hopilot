@@ -1,8 +1,9 @@
-import logging
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, Optional
-from core.models import HOSession, HOMessage
+
+from core.models import HOMessage, HOSession
 from db.db_manager import DBManager
 
 logger = logging.getLogger(__name__)
@@ -12,21 +13,21 @@ class SessionService:
     Session 상태 관리 및 DB 영속성을 담당하는 비동기 서비스 계층.
     비동기 환경에서의 동시성 문제를 해결하기 위해 active_sessions 딕셔너리로 상태를 관리합니다.
     """
-    
+
     def __init__(self, db_manager: DBManager):
         self.db = db_manager
         # [완료된 상태] 활성화되어 메모리에 올라간 세션들
         self.active_sessions: Dict[str, HOSession] = {}
         # [대기 상태] 현재 DB에서 불러오고 있어 곧 활성화될 세션들 (동시성 충돌 방지용)
         self._pending_sessions: Dict[str, asyncio.Task] = {}
-        
+
     async def create_session(self, title: str = "New Session") -> HOSession:
         """새로운 세션을 생성하고, 메모리에 올린 뒤 DB에 저장합니다."""
         session = HOSession(title=title)
-        
+
         # 메모리에 적재
         self.active_sessions[session.session_id] = session
-        
+
         # DB에 초기 상태 저장
         await self.db.create("sessions", session.to_db_dict())
         logger.info(f"Created new session: {session.session_id}")
@@ -40,15 +41,15 @@ class SessionService:
         # 1. 이미 완성된 세션이 메모리에 있는지 확인
         if session_id in self.active_sessions:
             return self.active_sessions[session_id]
-            
+
         # 2. 누군가 이미 DB에서 불러오고 있는지 확인 (대기열에 합류)
         if session_id in self._pending_sessions:
             return await self._pending_sessions[session_id]
-            
+
         # 3. 아무도 가져오고 있지 않다면, 직접 로딩 작업을 시작하고 전광판(_pending_sessions)에 등록
         pending_task = asyncio.create_task(self._load_session(session_id))
         self._pending_sessions[session_id] = pending_task
-        
+
         # 4. 작업이 완료될 때까지 대기
         return await pending_task
 
@@ -58,7 +59,7 @@ class SessionService:
             row = await self.db.load("sessions", session_id)
             if not row:
                 return None
-                
+
             session = HOSession.from_db_dict(dict(row))
             self.active_sessions[session_id] = session
             return session
@@ -72,7 +73,7 @@ class SessionService:
         session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found.")
-            
+
         session.title = new_title
         session.updated_at = datetime.utcnow()
         await self.commit_session(session_id)
@@ -85,7 +86,7 @@ class SessionService:
         session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found.")
-            
+
         session.messages.append(message)
         session.updated_at = datetime.utcnow()
         logger.debug(f"Added message to session {session_id} in memory.")
@@ -98,7 +99,7 @@ class SessionService:
         if session_id not in self.active_sessions:
             logger.warning(f"Session {session_id} is not active in memory to commit.")
             return
-            
+
         session = self.active_sessions[session_id]
         await self.db.save("sessions", session_id, session.to_db_dict())
         logger.info(f"Committed session {session_id} to DB.")
@@ -117,6 +118,6 @@ class SessionService:
         """메모리와 DB 양쪽에서 세션을 완전히 삭제합니다."""
         if session_id in self.active_sessions:
             del self.active_sessions[session_id]
-            
+
         await self.db.delete("sessions", session_id)
         logger.info(f"Session {session_id} fully deleted.")

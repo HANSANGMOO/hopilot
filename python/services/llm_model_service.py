@@ -1,5 +1,5 @@
-import yaml
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from utils import get_logger
 
 logger = get_logger("LlmModelService")
@@ -8,7 +8,7 @@ class LlmModelService:
     """
     LLM API 설정 및 모델 메타데이터를 관리하고 프론트엔드에 제공하는 비즈니스 서비스 계층입니다.
     """
-    
+
     def __init__(self, config_path: str = "llm_config.yaml"):
         self.config_path = config_path
 

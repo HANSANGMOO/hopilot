@@ -1,8 +1,7 @@
+
+from core.models import CopilotRequest, CopilotTask
 from utils import get_logger
 
-import uuid
-from typing import List
-from core.models import CopilotTask, CopilotRequest, HOMessage, TextPayload
 logger = get_logger("RequestEngine")
 
 class RequestEngine:

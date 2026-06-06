@@ -1,8 +1,9 @@
-import aiosqlite
-from typing import Any, Dict, List, Optional, Tuple
-from pathlib import Path
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import aiosqlite
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class DBManager:
     def __init__(self, db_path: str = "hopilot.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
     @asynccontextmanager
     async def get_connection(self):
         """새로운 비동기 데이터베이스 연결을 반환합니다."""
@@ -22,8 +23,8 @@ class DBManager:
             await conn.execute("PRAGMA journal_mode = WAL;")
             await conn.execute("PRAGMA foreign_keys = ON;")
             await conn.execute("PRAGMA busy_timeout = 30000;")
-            
-            conn.row_factory = aiosqlite.Row 
+
+            conn.row_factory = aiosqlite.Row
             yield conn
 
     async def initialize(self):
@@ -33,18 +34,18 @@ class DBManager:
         """
         logger.info("Initializing database from schema.sql...")
         schema_path = Path(__file__).parent / "schema.sql"
-        
+
         if not schema_path.exists():
             logger.warning(f"Schema file not found at {schema_path}")
             return
-            
+
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_script = f.read()
-            
+
         async with self.get_connection() as conn:
             await conn.executescript(schema_script)
             await conn.commit()
-            
+
         # 스키마 구성이 끝난 후 마이그레이션 로직 실행
         await self._run_migrations()
         logger.info("Database initialized successfully.")
@@ -52,26 +53,26 @@ class DBManager:
     async def _run_migrations(self):
         """저장된 MIGRATIONS 딕셔너리를 기반으로 순차적으로 마이그레이션을 수행합니다."""
         from .migrations import MIGRATIONS, SCHEMA_VERSION
-            
+
         async with self.get_connection() as conn:
             # 현재 버전 조회
             async with conn.execute("SELECT MAX(version) as current_version FROM schema_version") as cursor:
                 row = await cursor.fetchone()
                 current_version = row["current_version"] if row and row["current_version"] else 1
-            
+
             target_version = SCHEMA_VERSION
-            
+
             if current_version >= target_version:
                 return
-                
+
             logger.info(f"Running database migrations from v{current_version} to v{target_version}...")
-            
+
             for version in range(current_version + 1, target_version + 1):
                 try:
                     if version in MIGRATIONS:
                         callback = MIGRATIONS[version]
                         await callback(conn)
-                        
+
                     await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
                     await conn.commit()
                     logger.info(f"Successfully migrated to v{version}.")
@@ -94,9 +95,9 @@ class DBManager:
         columns = ", ".join(data.keys())
         placeholders = ", ".join(["?"] * len(data))
         values = tuple(data.values())
-        
+
         query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
-        
+
         async with self.get_connection() as conn:
             cursor = await conn.execute(query, values)
             await conn.commit()
@@ -110,7 +111,7 @@ class DBManager:
             레코드 데이터를 담은 aiosqlite.Row 객체 (존재하지 않으면 None)
         """
         query = f"SELECT * FROM {table} WHERE {id_column} = ?"
-        
+
         async with self.get_connection() as conn:
             async with conn.execute(query, (session_id,)) as cursor:
                 return await cursor.fetchone()
@@ -124,9 +125,9 @@ class DBManager:
         """
         set_clause = ", ".join([f"{col} = ?" for col in data.keys()])
         values = tuple(data.values()) + (session_id,)
-        
+
         query = f"UPDATE {table} SET {set_clause} WHERE {id_column} = ?"
-        
+
         async with self.get_connection() as conn:
             cursor = await conn.execute(query, values)
             await conn.commit()
@@ -140,7 +141,7 @@ class DBManager:
             삭제된 행(Row)의 수
         """
         query = f"DELETE FROM {table} WHERE {id_column} = ?"
-        
+
         async with self.get_connection() as conn:
             cursor = await conn.execute(query, (session_id,))
             await conn.commit()

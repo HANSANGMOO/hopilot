@@ -8,7 +8,7 @@ IS_FROZEN = getattr(sys, 'frozen', False)
 
 # 2. 프로젝트 루트 경로 (PROJECT_ROOT) 설정 및 로그 경로
 if IS_FROZEN:
-    # [빌드/배포 모드] 
+    # [빌드/배포 모드]
     PROJECT_ROOT = Path(sys.executable).parent
     # 로깅 경로: APPDATA/hopilot/logs
     appdata_dir = Path(os.getenv("APPDATA", str(Path.home())))

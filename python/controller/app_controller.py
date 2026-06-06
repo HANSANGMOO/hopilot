@@ -1,9 +1,9 @@
-from utils import get_logger
-from core.bus import EventBus, SignalBus
 from contracts.copilot import SendUserRequestSignal
 from controller.handlers.copilot_handler import CopilotHandler
+from core.bus import EventBus, SignalBus
 from services.copilot_service import CopilotService
 from services.session_service import SessionService
+from utils import get_logger
 
 logger = get_logger("AppController")
 
@@ -17,7 +17,7 @@ class AppController:
         self.signal_bus = signal_bus
         self.copilot_handler = CopilotHandler(copilot_service=copilot_service, session_service=session_service)
         logger.info("AppController initialized with EventBus, SignalBus, and Handlers.")
-        
+
         self.connect_signals()
 
     def connect_signals(self):

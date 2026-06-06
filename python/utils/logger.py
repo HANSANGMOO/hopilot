@@ -1,9 +1,9 @@
 import logging
 import sys
-from pathlib import Path
 
 # config.py에서 환경(DEV/BUILD)에 따라 계산된 로그 경로를 가져옵니다.
 from config import LOG_DIR, LOG_FILE_NAME
+
 
 def setup_logger(app_name: str = "Hopilot", level: int = logging.INFO) -> logging.Logger:
     """
@@ -25,7 +25,7 @@ def setup_logger(app_name: str = "Hopilot", level: int = logging.INFO) -> loggin
         # 3. 콘솔 핸들러 (터미널 출력용)
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
-        
+
         # 4. 로그 포맷 설정
         formatter = logging.Formatter(
             fmt="[%(asctime)s] | %(levelname)-8s | %(name)s | %(message)s",
@@ -33,11 +33,11 @@ def setup_logger(app_name: str = "Hopilot", level: int = logging.INFO) -> loggin
         )
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
-        
+
         # 핸들러 부착
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
-    
+
     return logger
 
 def get_logger(module_name: str) -> logging.Logger:

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Callable, Awaitable, Optional, AsyncGenerator
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 
 logger = logging.getLogger("Channel")
 
@@ -15,20 +15,20 @@ class Channel:
     메시지 처리 논리를 완벽히 분리하기 위한 순수 파이썬 채널 인프라입니다.
     비동기 제너레이터(Async Generator) 패턴을 사용하여 이벤트를 배출(yield)합니다.
     """
-    
+
     def __init__(
-        self, 
-        send_msg_func: Callable[[str], Awaitable[None]], 
+        self,
+        send_msg_func: Callable[[str], Awaitable[None]],
         receive_msg_func: Callable[[], Awaitable[str]]
     ):
         # 네트워크 송수신 기능을 외부(Controller)로부터 주입받습니다.
         self._send_msg_func = send_msg_func
         self._receive_msg_func = receive_msg_func
-        
+
         # 송신 대기열 큐 (백그라운드에서 순차 전송)
         self._send_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self._send_task: Optional[asyncio.Task] = None
-        
+
         # 백그라운드 태스크 GC 방지용 Set
         self._background_tasks = set()
 
@@ -77,7 +77,7 @@ class Channel:
                     logger.warning(f"Received invalid JSON format: {raw_text}")
                 except Exception as e:
                     logger.error(f"Error handling message: {e}", exc_info=True)
-                    
+
         except ChannelDisconnected:
             logger.info("Channel disconnected normally.")
         except Exception as e:
@@ -92,7 +92,7 @@ class Channel:
         self._send_task = asyncio.create_task(self._send_loop())
         self._background_tasks.add(self._send_task)
         self._send_task.add_done_callback(self._on_task_done)
-        
+
         try:
             # 2. 수신 루프 실행 및 데이터 중계(Proxy yield)
             async for payload in self._receive_loop():

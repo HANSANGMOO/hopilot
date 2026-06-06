@@ -1,8 +1,18 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Union, Literal, Annotated, Callable, Protocol, AsyncGenerator
-from datetime import datetime
 import json
 import uuid
+from datetime import datetime
+from typing import (
+    Annotated,
+    AsyncGenerator,
+    Callable,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Union,
+)
+
+from pydantic import BaseModel, Field
 
 # 도메인 모델의 기준이 되는 현재 스키마 버전 (DB 계층이 이를 참조합니다)
 SCHEMA_VERSION = 1
@@ -108,24 +118,24 @@ class HOSession(BaseModel):
     def from_db_dict(cls, data: dict) -> "HOSession":
         """DB에서 조회한 딕셔너리(JSON 문자열 포함)를 파싱하여 HOSession 객체로 복원합니다."""
         parsed_data = dict(data)
-        
+
         # DB 컬럼 'id'를 Pydantic 모델의 'session_id'로 매핑
         if "id" in parsed_data:
             parsed_data["session_id"] = parsed_data.pop("id")
-            
+
         # JSON 문자열 역직렬화
         if isinstance(parsed_data.get("meta"), str):
             try:
                 parsed_data["meta"] = json.loads(parsed_data["meta"])
             except json.JSONDecodeError:
                 parsed_data["meta"] = {}
-                
+
         if isinstance(parsed_data.get("messages"), str):
             try:
                 parsed_data["messages"] = json.loads(parsed_data["messages"])
             except json.JSONDecodeError:
                 parsed_data["messages"] = []
-                
+
         return cls.model_validate(parsed_data)
 
 # ==========================================
@@ -159,11 +169,11 @@ class CopilotRequest(BaseModel):
 
 class AgentCallbacks(Protocol):
     """AgentWorker가 작업을 수행할 때 호출하는 콜백(포인터)들의 집합입니다."""
-    
+
     async def build_request(self, task: CopilotTask) -> CopilotRequest:
         """CopilotTask를 받아서 LLM API 요청용 모델(CopilotRequest)로 변환합니다."""
         ...
-        
+
     def stream_opener(self, request: CopilotRequest) -> AsyncGenerator[HOChunk, None]:
         """LLM API 스트림을 열고 실시간 청크를 생성합니다."""
         ...

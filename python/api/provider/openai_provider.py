@@ -1,9 +1,8 @@
-from typing import List, Any, Dict, AsyncGenerator, Optional
-
-from core.models import CopilotRequest, HOChunk
-from utils import get_logger
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from api.provider.base_provider import BaseProvider
+from core.models import CopilotRequest, HOChunk
+from utils import get_logger
 
 logger = get_logger("OpenAIProvider")
 
