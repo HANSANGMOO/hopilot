@@ -9,7 +9,7 @@ export default function Toolbar({ input, onSend }: ToolbarProps) {
   const disabled = !input.trim()
 
   return (
-    <div className="mr-0.5 mb-0.5 flex shrink-0 items-center">
+    <div className="flex shrink-0 items-center">
       <button
         onClick={onSend}
         disabled={disabled}
