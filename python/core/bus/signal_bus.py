@@ -1,7 +1,10 @@
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Callable, Type, Awaitable
+import uuid
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Type
+
 from contracts.signal import BaseSignal
+
 from .event_bus import BaseEventBus
 from .request_bus import BaseRequestBus
 from .stream_bus import BaseStreamBus
@@ -18,15 +21,34 @@ class SignalBus:
         self.events = BaseEventBus[BaseSignal]("SignalEventBus")
         self.requests = BaseRequestBus[BaseSignal]("SignalRequestBus")
         self.streams = BaseStreamBus[BaseSignal]("SignalStreamBus")
-        
-        # GC 방어 로직: 완료되지 않은 백그라운드 태스크의 강한 참조 유지
-        self._background_tasks = set()
 
-    def _on_task_done(self, task: asyncio.Task):
-        """백그라운드 태스크가 완료되면 GC 방어 셋에서 깔끔하게 삭제(is_callback_done)"""
-        self._background_tasks.discard(task)
-        if task.exception():
-            logger.error(f"[SignalBus] 태스크 처리 중 예외 발생: {task.exception()}", exc_info=task.exception())
+        # GC 방어 로직: 완료되지 않은 백그라운드 태스크의 강한 참조 유지 (invoke_id 기준)
+        self._background_tasks: Dict[str, asyncio.Task] = {}
+
+    def _on_task_done(self, task_id: str, task: asyncio.Task):
+        """백그라운드 태스크가 완료되면 GC 방어 딕셔너리에서 깔끔하게 삭제"""
+        self._background_tasks.pop(task_id, None)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            logger.error(f"[SignalBus] 태스크({task_id}) 처리 중 예외: {exc}", exc_info=exc)
+
+    def cancel_task(self, invoke_id: str):
+        """진행 중인 태스크에 CancelledError를 주입하여 우아하게 종료합니다."""
+        if invoke_id in self._background_tasks:
+            logger.info(f"[SignalBus] 백그라운드 태스크({invoke_id}) 취소 요청 수신 - 취소 시작")
+            self._background_tasks[invoke_id].cancel()
+        else:
+            logger.warning(f"[SignalBus] 취소하려는 태스크({invoke_id})를 찾을 수 없습니다.")
+
+    def cancel_all_tasks(self):
+        """현재 진행 중인 모든 백그라운드 태스크를 강제 취소합니다."""
+        if not self._background_tasks:
+            return
+        logger.info(f"[SignalBus] 연결 종료 - 모든 백그라운드 태스크({len(self._background_tasks)}개) 강제 취소")
+        for task in list(self._background_tasks.values()):
+            task.cancel()
 
     # ==========================
     # Event (1:N, 단방향 발신/수신)
@@ -57,20 +79,43 @@ class SignalBus:
         async def _run_unary():
             try:
                 result = await self.requests.invoke(signal)
-                # 만약 result가 Pydantic 모델이라면 dict로 변환 (필요시)
-                data = result.model_dump() if hasattr(result, "model_dump") else result
-                
-                # 원본 시그널의 invoke_id 보존
-                if hasattr(signal, "invoke_id") and isinstance(data, dict):
-                    data["invoke_id"] = signal.invoke_id
-                    
-                await send_callback(data)
+                result_data = result.model_dump() if hasattr(result, "model_dump") else result
+
+                # 단일 요청 정상 완료 -> JSON-RPC Result 응답
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": getattr(signal, "id", None),
+                    "result": result_data
+                }
+                await send_callback(response)
+
+            except asyncio.CancelledError:
+                # 작업 취소 시 -> JSON-RPC Error 응답 (-32800: Request Cancelled)
+                if getattr(signal, "id", None):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": signal.id,
+                        "error": {"code": -32800, "message": "Request cancelled"}
+                    }
+                    await send_callback(response)
+                raise
             except Exception as e:
-                logger.error(f"[SignalBus] invoke_background 실행 실패: {e}", exc_info=True)
+                logger.error(f"[SignalBus] invoke_background 예외 발생: {e}", exc_info=True)
+                # 처리 중 예외 발생 시 -> JSON-RPC Error 응답 (-32000: Server Error)
+                if getattr(signal, "id", None):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": signal.id,
+                        "error": {"code": -32000, "message": str(e)}
+                    }
+                    await send_callback(response)
+            finally:
+                pass # 단일 요청이므로 별도의 자원 닫기 불필요
 
         task = asyncio.create_task(_run_unary())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._on_task_done)
+        task_id = getattr(signal, "id", None) or str(uuid.uuid4())
+        self._background_tasks[task_id] = task
+        task.add_done_callback(lambda t: self._on_task_done(task_id, t))
 
     # ==========================
     # Stream (1:1, 양방향 스트리밍 응답 대기)
@@ -84,17 +129,57 @@ class SignalBus:
         가져와 콜백(웹소켓 send)으로 전송합니다.
         """
         async def _run_stream():
+            gen = None
             try:
                 # stream()은 await 없이 즉시 제너레이터를 반환
                 gen = self.streams.stream(signal)
                 async for chunk in gen:
-                    data = chunk.model_dump() if hasattr(chunk, "model_dump") else chunk
-                    if hasattr(signal, "invoke_id") and isinstance(data, dict):
-                        data["invoke_id"] = signal.invoke_id
-                    await send_callback(data)
+                    chunk_data = chunk.model_dump() if hasattr(chunk, "model_dump") else chunk
+                    # 스트리밍 청크 -> Progress Notification
+                    progress_notification = {
+                        "jsonrpc": "2.0",
+                        "method": "$/progress",
+                        "params": {
+                            "token": getattr(signal, "id", None),
+                            "chunk": chunk_data
+                        }
+                    }
+                    await send_callback(progress_notification)
+
+                # 정상 완료 시 -> JSON-RPC 최종 Result 응답
+                if getattr(signal, "id", None):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": signal.id,
+                        "result": {"status": "completed"}
+                    }
+                    await send_callback(response)
+
+            except asyncio.CancelledError:
+                # 작업 취소 시 -> JSON-RPC Error 응답 (-32800)
+                if getattr(signal, "id", None):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": signal.id,
+                        "error": {"code": -32800, "message": "Stream cancelled"}
+                    }
+                    await send_callback(response)
+                raise
             except Exception as e:
-                logger.error(f"[SignalBus] stream_background 실행 실패: {e}", exc_info=True)
+                logger.error(f"[SignalBus] stream_background 예외 발생: {e}", exc_info=True)
+                # 에러 발생 시 -> JSON-RPC Error 응답 (-32000)
+                if getattr(signal, "id", None):
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": signal.id,
+                        "error": {"code": -32000, "message": str(e)}
+                    }
+                    await send_callback(response)
+            finally:
+                if gen is not None:
+                    await gen.aclose()
 
         task = asyncio.create_task(_run_stream())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._on_task_done)
+        task_id = getattr(signal, "id", None) or str(uuid.uuid4())
+        self._background_tasks[task_id] = task
+        task.add_done_callback(lambda t: self._on_task_done(task_id, t))

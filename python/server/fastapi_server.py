@@ -1,12 +1,17 @@
-import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from typing import Optional
-import inspect
-from utils import get_logger
 
-from core.channel import Channel
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+from contracts.signal import (
+    BaseEventSignal,
+    BaseRequestSignal,
+    BaseSignal,
+    BaseStreamSignal,
+    CancelRequestSignal,
+)
 from core.bus import EventBus, SignalBus
-from contracts.signal import BaseSignal, BaseRequestSignal, BaseEventSignal, BaseStreamSignal
+from core.channel import Channel
+from utils import get_logger
 
 logger = get_logger("FastAPIServer")
 
@@ -15,13 +20,13 @@ class FastAPIServer:
     네트워크와 프레임워크(FastAPI)의 생명주기를 전담하는 인프라/API 계층 클래스입니다.
     순수 비즈니스 로직(Engine, Service)을 알지 못하며, 오직 웹소켓 연결과 Channel 생성을 담당합니다.
     """
-    
+
     def __init__(self, event_bus: EventBus, signal_bus: SignalBus):
         self.app = FastAPI(title="Hopilot Backend")
         self.event_bus = event_bus
         self.signal_bus = signal_bus
         self.channel: Optional[Channel] = None
-        
+
         self._register_routes()
 
     def _register_routes(self):
@@ -29,46 +34,53 @@ class FastAPIServer:
         async def hopilot_websocket_endpoint(websocket: WebSocket):
             await websocket.accept()
             logger.info("프론트엔드 웹소켓 연결 수락됨.")
-            
+
             # 1. 클라이언트 접속 순간 Channel 객체 즉시 생성 (의존성 주입)
             self.channel = Channel(
                 send_msg_func=websocket.send_text,
                 receive_msg_func=websocket.receive_text
             )
-            
+
             try:
                 # 2. Channel의 수신 루프 가동
                 # 클라이언트가 보낸 메시지(JSON 파싱된 Dict)가 지속적으로 배출(yield)됩니다.
                 async for payload in self.channel.listen():
                     logger.debug(f"웹소켓 수신 -> Channel 배출: {payload}")
-                    
+
                     # 3. 수신된 데이터를 Pydantic 시그널 객체로 동적 파싱
                     try:
                         signal = BaseSignal.resolve_signal(payload)
-                        
+
                         # 4. 시그널의 상속 계층에 따라 논블로킹 라우팅 분기
                         if isinstance(signal, BaseStreamSignal):
-                            logger.info(f"스트림 시그널 수신: {type(signal).__name__} (invoke_id={signal.invoke_id})")
+                            logger.info(f"스트림 시그널 수신: {signal.method} (id={signal.id})")
                             self.signal_bus.stream_background(signal, send_callback=self.channel.send)
-                            
+
                         elif isinstance(signal, BaseRequestSignal):
-                            logger.info(f"단일 요청 시그널 수신: {type(signal).__name__} (invoke_id={signal.invoke_id})")
+                            logger.info(f"단일 요청 시그널 수신: {signal.method} (id={signal.id})")
                             self.signal_bus.invoke_background(signal, send_callback=self.channel.send)
-                                
+
                         elif isinstance(signal, BaseEventSignal):
-                            logger.info(f"이벤트 시그널 수신: {type(signal).__name__}")
-                            # SignalBus를 통해 단방향 배출
-                            self.signal_bus.emit(signal)
-                            
+                            if isinstance(signal, CancelRequestSignal):
+                                target_id = signal.params.get("target_id")
+                                logger.info(f"취소 시그널 수신: target_id={target_id}")
+                                if target_id:
+                                    self.signal_bus.cancel_task(target_id)
+                            else:
+                                logger.info(f"이벤트 시그널 수신: {signal.method}")
+                                # SignalBus를 통해 단방향 배출
+                                self.signal_bus.emit(signal)
+
                     except ValueError as ve:
                         logger.warning(f"시그널 파싱 실패: {ve}")
                     except Exception as e:
                         logger.error(f"시그널 라우팅 중 예외 발생: {e}", exc_info=True)
-                    
+
             except WebSocketDisconnect:
                 logger.info("프론트엔드 웹소켓 연결 종료됨.")
             except Exception as e:
                 logger.error(f"웹소켓 통신 중 예외 발생: {e}", exc_info=True)
             finally:
-                # 4. 연결 종료 시 Channel 객체 소멸
+                # 4. 연결 종료 시 모든 백그라운드 태스크 정리 및 Channel 객체 소멸
+                self.signal_bus.cancel_all_tasks()
                 self.channel = None
