@@ -1,4 +1,4 @@
-from typing import Any, Optional, TypedDict
+from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -10,19 +10,18 @@ class BaseSignal(BaseModel):
     """
     jsonrpc: str = "2.0"
     method: str = Field(default="", description="JSON-RPC 2.0 규격의 식별자(기존 type)")
-    params: Optional[Any] = Field(default=None, description="비즈니스 데이터(중첩 객체)")
 
     @classmethod
     def resolve_signal(cls, payload: dict) -> 'BaseSignal':
         """
-        프론트엔드에서 수신된 원시 JSON 딕셔너리를 
+        프론트엔드에서 수신된 원시 JSON 딕셔너리를
         자신을 상속받은 자식 클래스 명단을 뒤져 알맞은 객체로 역직렬화합니다.
         """
         signal_method = payload.get("method")
         if not signal_method:
             raise ValueError("페이로드에 'method' 필드가 없습니다.")
 
-        # 모든 자식 클래스(손자 포함)를 순회하며 이름 또는 method 기본값이 일치하는 클래스를 찾습니다.
+        # 모든 자식 클래스를 순회하며 이름 또는 method 기본값이 일치하는 클래스를 찾습니다.
         def _find_subclass(parent_cls, target_name):
             for subclass in parent_cls.__subclasses__():
 
@@ -37,14 +36,19 @@ class BaseSignal(BaseModel):
 
         target_cls = _find_subclass(cls, signal_method)
         if not target_cls:
-            raise ValueError(f"'{signal_method}'을(를) 파싱할 수 있는 자식 클래스가 정의되지 않았습니다.")
+            raise ValueError(
+                f"'{signal_method}'을(를) 파싱할 수 있는 "
+                f"자식 클래스가 정의되지 않았습니다."
+            )
 
         return target_cls(**payload)
 
 
+from typing import Union
+
 class BaseRequestSignal(BaseSignal):
     """프론트엔드에서 단일 응답을 기다리는 양방향 1:1 통신용 시그널입니다."""
-    id: str = Field(..., description="JSON-RPC 요청을 매칭하기 위한 고유 식별자")
+    id: Union[str, int] = Field(..., description="JSON-RPC 요청을 매칭하기 위한 고유 식별자")
 
 
 class BaseEventSignal(BaseSignal):
@@ -54,7 +58,7 @@ class BaseEventSignal(BaseSignal):
 
 class BaseStreamSignal(BaseSignal):
     """프론트엔드에서 스트리밍 응답(Progress Notification)을 기다리는 양방향 통신용 시그널입니다."""
-    id: str = Field(..., description="스트림 응답을 매칭하기 위한 고유 식별자")
+    id: Union[str, int] = Field(..., description="스트림 응답을 매칭하기 위한 고유 식별자")
 
 
 # ==========================================
@@ -62,7 +66,7 @@ class BaseStreamSignal(BaseSignal):
 # ==========================================
 
 class CancelRequestParams(TypedDict):
-    target_id: str
+    id: Union[str, int]
 
 class CancelRequestSignal(BaseEventSignal):
     """

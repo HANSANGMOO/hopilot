@@ -21,8 +21,8 @@ class FastAPIServer:
     순수 비즈니스 로직(Engine, Service)을 알지 못하며, 오직 웹소켓 연결과 Channel 생성을 담당합니다.
     """
 
-    def __init__(self, event_bus: EventBus, signal_bus: SignalBus):
-        self.app = FastAPI(title="Hopilot Backend")
+    def __init__(self, event_bus: EventBus, signal_bus: SignalBus, lifespan=None):
+        self.app = FastAPI(title="Hopilot Backend", lifespan=lifespan)
         self.event_bus = event_bus
         self.signal_bus = signal_bus
         self.channel: Optional[Channel] = None
@@ -62,8 +62,8 @@ class FastAPIServer:
 
                         elif isinstance(signal, BaseEventSignal):
                             if isinstance(signal, CancelRequestSignal):
-                                target_id = signal.params.get("target_id")
-                                logger.info(f"취소 시그널 수신: target_id={target_id}")
+                                target_id = signal.params.get("id")
+                                logger.info(f"취소 시그널 수신: id={target_id}")
                                 if target_id:
                                     self.signal_bus.cancel_task(target_id)
                             else:

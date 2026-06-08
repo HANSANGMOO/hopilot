@@ -29,14 +29,15 @@ class BaseEventBus(Generic[T]):
         if msg_type in self._listeners:
             for callback in self._listeners[msg_type]:
                 coro = callback(message)
-                task = asyncio.create_task(coro)
+                task = asyncio.create_task(coro)  # type: ignore
                 self._background_tasks.add(task)
                 task.add_done_callback(self._on_task_done)
 
     def _on_task_done(self, task: asyncio.Task):
         self._background_tasks.discard(task)
         if task.exception():
-            logger.error(f"[{self.bus_name}] 예외 발생: {task.exception()}", exc_info=task.exception())
+            exc = task.exception()
+            logger.error(f"[{self.bus_name}] 예외 발생: {exc}", exc_info=exc)
 
     def on(self, msg_type: Type[T]):
         """데코레이터 형태로 구독을 지원합니다."""

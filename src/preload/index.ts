@@ -3,7 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  // React에서 HOSignal을 쏘면 이 함수가 받아서 Main 프로세스('ho-signal')로 토스합니다.
+  // When React sends an HOSignal, this function catches it and forwards it to the Main process ('ho-signal').
   sendSignal: (signal: any) => ipcRenderer.send('ho-signal', signal)
 }
 

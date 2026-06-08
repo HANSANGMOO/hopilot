@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Type
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Type, TypeVar
 
 from contracts.signal import BaseSignal
 
@@ -11,12 +11,16 @@ from .stream_bus import BaseStreamBus
 
 logger = logging.getLogger("SignalBus")
 
+T_Signal = TypeVar("T_Signal", bound=BaseSignal)
+
+
 class SignalBus:
     """
     프론트엔드(Electron)와 통신하는 네트워크 전용 파사드(Facade) 버스입니다.
     내부적으로 단방향 Event, 양방향 Request, 스트리밍 Stream을 나누어 라우팅합니다.
     웹소켓의 병목을 막기 위해 invoke_background와 stream_background 메서드를 제공합니다.
     """
+
     def __init__(self):
         self.events = BaseEventBus[BaseSignal]("SignalEventBus")
         self.requests = BaseRequestBus[BaseSignal]("SignalRequestBus")
@@ -46,18 +50,23 @@ class SignalBus:
         """현재 진행 중인 모든 백그라운드 태스크를 강제 취소합니다."""
         if not self._background_tasks:
             return
-        logger.info(f"[SignalBus] 연결 종료 - 모든 백그라운드 태스크({len(self._background_tasks)}개) 강제 취소")
+        logger.info(
+            f"[SignalBus] 연결 종료 - "
+            f"모든 백그라운드 태스크({len(self._background_tasks)}개) 강제 취소"
+        )
         for task in list(self._background_tasks.values()):
             task.cancel()
 
     # ==========================
     # Event (1:N, 단방향 발신/수신)
     # ==========================
-    def connect(self, signal_type: Type[BaseSignal], callback: Callable[[BaseSignal], Awaitable[None]]):
-        self.events.subscribe(signal_type, callback)
+    def connect(self, signal_type: Type[T_Signal], callback: Callable[[T_Signal], Awaitable[None]]):
+        self.events.subscribe(signal_type, callback)  # type: ignore
 
-    def disconnect(self, signal_type: Type[BaseSignal], callback: Callable[[BaseSignal], Awaitable[None]]):
-        self.events.unsubscribe(signal_type, callback)
+    def disconnect(
+        self, signal_type: Type[T_Signal], callback: Callable[[T_Signal], Awaitable[None]]
+    ):  # noqa: E501
+        self.events.unsubscribe(signal_type, callback)  # type: ignore
 
     def emit(self, signal: BaseSignal):
         self.events.publish(signal)
@@ -68,14 +77,17 @@ class SignalBus:
     # ==========================
     # Request (1:1, 양방향 단일 응답 대기)
     # ==========================
-    def handle(self, signal_type: Type[BaseSignal], handler: Callable[[BaseSignal], Awaitable[Any]]):
-        self.requests.handle(signal_type, handler)
+    def handle(self, signal_type: Type[T_Signal], handler: Callable[[T_Signal], Awaitable[Any]]):
+        self.requests.handle(signal_type, handler)  # type: ignore
 
-    def invoke_background(self, signal: BaseSignal, send_callback: Callable[[dict], Awaitable[None]]):
+    def invoke_background(
+        self, signal: BaseSignal, send_callback: Callable[[dict], Awaitable[None]]
+    ):  # noqa: E501
         """
         [FastAPI 전용] 메인 루프를 블로킹하지 않고 RequestBus를 호출한 뒤,
         결과가 나오면 콜백(웹소켓 send)을 실행합니다.
         """
+
         async def _run_unary():
             try:
                 result = await self.requests.invoke(signal)
@@ -85,32 +97,34 @@ class SignalBus:
                 response = {
                     "jsonrpc": "2.0",
                     "id": getattr(signal, "id", None),
-                    "result": result_data
+                    "result": result_data,
                 }
                 await send_callback(response)
 
             except asyncio.CancelledError:
                 # 작업 취소 시 -> JSON-RPC Error 응답 (-32800: Request Cancelled)
-                if getattr(signal, "id", None):
+                signal_id = getattr(signal, "id", None)
+                if signal_id:
                     response = {
                         "jsonrpc": "2.0",
-                        "id": signal.id,
-                        "error": {"code": -32800, "message": "Request cancelled"}
+                        "id": signal_id,
+                        "error": {"code": -32800, "message": "Request cancelled"},
                     }
                     await send_callback(response)
                 raise
             except Exception as e:
                 logger.error(f"[SignalBus] invoke_background 예외 발생: {e}", exc_info=True)
                 # 처리 중 예외 발생 시 -> JSON-RPC Error 응답 (-32000: Server Error)
-                if getattr(signal, "id", None):
+                signal_id = getattr(signal, "id", None)
+                if signal_id:
                     response = {
                         "jsonrpc": "2.0",
-                        "id": signal.id,
-                        "error": {"code": -32000, "message": str(e)}
+                        "id": signal_id,
+                        "error": {"code": -32000, "message": str(e)},
                     }
                     await send_callback(response)
             finally:
-                pass # 단일 요청이므로 별도의 자원 닫기 불필요
+                pass  # 단일 요청이므로 별도의 자원 닫기 불필요
 
         task = asyncio.create_task(_run_unary())
         task_id = getattr(signal, "id", None) or str(uuid.uuid4())
@@ -120,16 +134,22 @@ class SignalBus:
     # ==========================
     # Stream (1:1, 양방향 스트리밍 응답 대기)
     # ==========================
-    def stream_handle(self, signal_type: Type[BaseSignal], handler: Callable[[BaseSignal], AsyncGenerator]):
-        self.streams.handle(signal_type, handler)
+    def stream_handle(
+        self, signal_type: Type[T_Signal], handler: Callable[[T_Signal], AsyncGenerator]
+    ):  # noqa: E501
+        self.streams.handle(signal_type, handler)  # type: ignore
 
-    def stream_background(self, signal: BaseSignal, send_callback: Callable[[dict], Awaitable[None]]):
+    def stream_background(
+        self, signal: BaseSignal, send_callback: Callable[[dict], Awaitable[None]]
+    ):  # noqa: E501
         """
-        [FastAPI 전용] 메인 루프를 블로킹하지 않고 StreamBus의 청크를 실시간으로 
+        [FastAPI 전용] 메인 루프를 블로킹하지 않고 StreamBus의 청크를 실시간으로
         가져와 콜백(웹소켓 send)으로 전송합니다.
         """
+
         async def _run_stream():
             gen = None
+            signal_id = getattr(signal, "id", None)
             try:
                 # stream()은 await 없이 즉시 제너레이터를 반환
                 gen = self.streams.stream(signal)
@@ -139,40 +159,37 @@ class SignalBus:
                     progress_notification = {
                         "jsonrpc": "2.0",
                         "method": "$/progress",
-                        "params": {
-                            "token": getattr(signal, "id", None),
-                            "chunk": chunk_data
-                        }
+                        "params": {"token": signal_id, "chunk": chunk_data},
                     }
                     await send_callback(progress_notification)
 
                 # 정상 완료 시 -> JSON-RPC 최종 Result 응답
-                if getattr(signal, "id", None):
+                if signal_id:
                     response = {
                         "jsonrpc": "2.0",
-                        "id": signal.id,
-                        "result": {"status": "completed"}
+                        "id": signal_id,
+                        "result": {"status": "completed"},
                     }
                     await send_callback(response)
 
             except asyncio.CancelledError:
                 # 작업 취소 시 -> JSON-RPC Error 응답 (-32800)
-                if getattr(signal, "id", None):
+                if signal_id:
                     response = {
                         "jsonrpc": "2.0",
-                        "id": signal.id,
-                        "error": {"code": -32800, "message": "Stream cancelled"}
+                        "id": signal_id,
+                        "error": {"code": -32800, "message": "Stream cancelled"},
                     }
                     await send_callback(response)
                 raise
             except Exception as e:
                 logger.error(f"[SignalBus] stream_background 예외 발생: {e}", exc_info=True)
                 # 에러 발생 시 -> JSON-RPC Error 응답 (-32000)
-                if getattr(signal, "id", None):
+                if signal_id:
                     response = {
                         "jsonrpc": "2.0",
-                        "id": signal.id,
-                        "error": {"code": -32000, "message": str(e)}
+                        "id": signal_id,
+                        "error": {"code": -32000, "message": str(e)},
                     }
                     await send_callback(response)
             finally:
