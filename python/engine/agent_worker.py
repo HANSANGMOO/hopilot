@@ -32,9 +32,9 @@ class AgentWorker:
             # 1. 프롬프트 조립 콜백 실행 (Request Engine 위임)
             request = await callbacks.build_request(task)
 
-            # 2. task.react에 담긴 마지막 메시지(AI Placeholder)와 세션 객체 획득
+            # 2. task.react에 담긴 마지막 메시지(AI Placeholder)와 세션 ID 획득
             ai_message = task.react.messages[-1]
-            session = task.input_dto.session
+            session_id = task.session_id
 
             # 3. 스트림 오픈 콜백 실행 및 순회 (Api Manager 위임)
             async for chunk in callbacks.stream_opener(request):
@@ -46,7 +46,7 @@ class AgentWorker:
                 yield CopilotChunkDTO(
                     chunk=chunk,
                     msg_id=ai_message.message_id,
-                    session_id=session.session_id,
+                    session_id=session_id,
                     role=ai_message.role
                 )
 
