@@ -8,7 +8,7 @@ from controller.app_controller import AppController
 from core.bus import EventBus, SignalBus
 from db.db_manager import DBManager
 from engine.agent_worker import AgentWorker
-from engine.request_engine import RequestEngine
+from engine.prompt_engine import PromptEngine
 from server.fastapi_server import FastAPIServer
 from services.copilot_service import CopilotService
 from services.session_service import SessionService
@@ -31,29 +31,41 @@ def bootstrap_app() -> FastAPI:
     db_manager: DBManager = DBManager()
     session_service: SessionService = SessionService(db_manager)
     api_manager: ApiManager = ApiManager()
-    request_engine: RequestEngine = RequestEngine()
+    request_engine: PromptEngine = PromptEngine()
     agent_worker: AgentWorker = AgentWorker(event_bus=event_bus)
 
     copilot_service: CopilotService = CopilotService(
         event_bus=event_bus,
         api_manager=api_manager,
         request_engine=request_engine,
-        agent_worker=agent_worker
+        agent_worker=agent_worker,
     )
 
     # 3. 비즈니스 코어(Controller) 생성 및 의존성 주입 (내부에서 핸들러 생성)
-    app_controller: AppController = AppController(
+    AppController(
         event_bus=event_bus,
         signal_bus=signal_bus,
         copilot_service=copilot_service,
-        session_service=session_service
+        session_service=session_service,
     )
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        logger.info("Lifespan 훅 실행: DB 초기화 시작")
+        await db_manager.initialize()
+        yield
+        logger.info("Lifespan 훅 종료")
 
     # 4. FastAPI 서버 객체 생성 및 의존성 주입
     # FastAPIServer 내부에 FastAPI app 객체가 포함되어 있습니다.
-    fastapi_server: FastAPIServer = FastAPIServer(event_bus=event_bus, signal_bus=signal_bus)
+    fastapi_server: FastAPIServer = FastAPIServer(
+        event_bus=event_bus, signal_bus=signal_bus, lifespan=lifespan
+    )
 
     return fastapi_server.app
+
 
 # 앱 초기화
 app = bootstrap_app()
