@@ -34,3 +34,7 @@ PORT = int(os.getenv("PORT", 8000))
 appdata_base = Path(os.getenv("APPDATA", str(Path.home())))
 DB_DIR = appdata_base / "hopilot" / "db"
 DB_FILE_PATH = DB_DIR / "copilot_history.db"
+
+# 4. 사용자 환경설정(API Key 등) 경로 설정
+USER_ENV_DIR = appdata_base / "hopilot" / "env"
+USER_API_KEYS_FILE = USER_ENV_DIR / "api_keys.env"

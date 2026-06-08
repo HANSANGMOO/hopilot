@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from core.models import CopilotRequest, HOChunk
+from core.models import CopilotPrompt, HOChunk
 
 
 class BaseProvider(ABC):
@@ -15,7 +15,9 @@ class BaseProvider(ABC):
     provider_name: str
     base_url: str
 
-    def __init__(self, api_key: str, model: str, base_url: Optional[str] = None, **kwargs: Any) -> None:
+    def __init__(
+        self, api_key: str, model: str, base_url: Optional[str] = None, **kwargs: Any
+    ) -> None:
         # 공급자 인증 및 기본 모델 설정을 주입받습니다.
         self.api_key = api_key
         self.model = model
@@ -28,7 +30,7 @@ class BaseProvider(ABC):
     @abstractmethod
     async def stream_generate(
         self,
-        request: CopilotRequest,
+        request: CopilotPrompt,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[HOChunk, None]:
         """
@@ -40,7 +42,7 @@ class BaseProvider(ABC):
         yield  # pragma: no cover  (AsyncGenerator 타입 명시용)
 
     @abstractmethod
-    def _to_provider_payload(self, request: CopilotRequest) -> Any:
+    def _to_provider_payload(self, request: CopilotPrompt) -> Any:
         """
         내부 표준 도메인 모델(CopilotRequest)을 해당 공급자의 REST API가 요구하는 페이로드(JSON) 포맷으로 변환합니다.
         """
