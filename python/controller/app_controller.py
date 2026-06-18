@@ -3,6 +3,7 @@ from controller.handlers.copilot_handler import CopilotHandler
 from core.bus import EventBus, SignalBus
 from services.copilot_service import CopilotService
 from services.session_service import SessionService
+from services.llm_model_service import LlmModelService
 from utils import get_logger
 
 logger = get_logger("AppController")
@@ -18,11 +19,12 @@ class AppController:
         signal_bus: SignalBus,
         copilot_service: CopilotService,
         session_service: SessionService,
+        llm_model_service: LlmModelService,
     ):
         self.event_bus = event_bus
         self.signal_bus = signal_bus
         self.copilot_handler = CopilotHandler(
-            copilot_service=copilot_service, session_service=session_service
+            copilot_service=copilot_service, session_service=session_service, llm_model_service=llm_model_service
         )
         logger.info("AppController initialized with EventBus, SignalBus, and Handlers.")
 

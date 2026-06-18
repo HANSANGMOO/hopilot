@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 import yaml
 from dotenv import dotenv_values, set_key, unset_key
 
+from api.api_manager import ApiManager
 from config import PROJECT_ROOT, USER_API_KEYS_FILE, USER_ENV_DIR
 from utils import get_logger
 
@@ -15,7 +16,8 @@ class LlmModelService:
     LLM API 설정 및 모델 메타데이터를 관리하고 프론트엔드에 제공하는 비즈니스 서비스 계층입니다.
     """
 
-    def __init__(self, config_filename: str = "llm_config.yaml"):
+    def __init__(self, api_manager: ApiManager, config_filename: str = "llm_config.yaml"):
+        self.api_manager = api_manager
         # 기본 설정 파일 경로는 PROJECT_ROOT/python 내부에 있다고 가정
         self.config_path = PROJECT_ROOT / "python" / config_filename
         self._ensure_env_dir()
@@ -59,14 +61,21 @@ class LlmModelService:
             
             models = config_data.get("models", [])
             api_keys = self._read_api_keys()
+            supported_providers = self.api_manager.get_supported_providers()
 
-            # API 키 유무에 따라 is_available 플래그 추가
+            valid_models = []
+            # API 키 유무에 따라 is_available 플래그 추가 및 검증
             for model in models:
                 provider = model.get("provider", "")
+                if provider not in supported_providers:
+                    logger.warning(f"Unsupported provider '{provider}'. Skipping model: {model.get('id')}")
+                    continue
+                
                 env_key = self._get_env_key(provider)
                 model["is_available"] = bool(api_keys.get(env_key))
+                valid_models.append(model)
 
-            return models
+            return valid_models
         except Exception as e:
             logger.error(f"Failed to load models: {e}")
             return []

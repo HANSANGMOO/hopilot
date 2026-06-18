@@ -29,15 +29,15 @@ class AgentWorker:
         logger.info(f"[AgentWorker] 스트리밍 시작 - 태스크: {task.task_id}")
 
         try:
-            # 1. 프롬프트 조립 콜백 실행 (Request Engine 위임)
-            request = await callbacks.build_request(task)
+            # 2. task 데이터를 기반으로 Provider가 요구하는 프롬프트 페이로드 객체를 생성합니다.
+            payload = await callbacks.payload_builder(task)
 
             # 2. task.react에 담긴 마지막 메시지(AI Placeholder)와 세션 ID 획득
             ai_message = task.react.messages[-1]
             session_id = task.session_id
 
-            # 3. 스트림 오픈 콜백 실행 및 순회 (Api Manager 위임)
-            async for chunk in callbacks.stream_opener(request):
+            # 3. 모델 API를 호출하여 스트림을 열고 청크를 받아옵니다.
+            async for chunk in callbacks.stream_opener(payload):
 
                 # 4. 부모 메시지의 chunks 리스트에 방금 온 조각 추가 (상태 업데이트)
                 ai_message.chunks.append(chunk)

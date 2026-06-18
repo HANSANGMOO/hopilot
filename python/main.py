@@ -8,10 +8,11 @@ from controller.app_controller import AppController
 from core.bus import EventBus, SignalBus
 from db.db_manager import DBManager
 from engine.agent_worker import AgentWorker
-from engine.prompt_engine import PromptEngine
+from engine.payload_engine import PayloadEngine
 from server.fastapi_server import FastAPIServer
 from services.copilot_service import CopilotService
 from services.session_service import SessionService
+from services.llm_model_service import LlmModelService
 from utils import setup_logger
 
 
@@ -31,13 +32,14 @@ def bootstrap_app() -> FastAPI:
     db_manager: DBManager = DBManager()
     session_service: SessionService = SessionService(db_manager)
     api_manager: ApiManager = ApiManager()
-    request_engine: PromptEngine = PromptEngine()
+    llm_model_service: LlmModelService = LlmModelService(api_manager=api_manager)
+    payload_engine: PayloadEngine = PayloadEngine()
     agent_worker: AgentWorker = AgentWorker(event_bus=event_bus)
 
     copilot_service: CopilotService = CopilotService(
         event_bus=event_bus,
         api_manager=api_manager,
-        request_engine=request_engine,
+        payload_engine=payload_engine,
         agent_worker=agent_worker,
     )
 
@@ -47,16 +49,19 @@ def bootstrap_app() -> FastAPI:
         signal_bus=signal_bus,
         copilot_service=copilot_service,
         session_service=session_service,
+        llm_model_service=llm_model_service,
     )
 
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        logger.info("Lifespan 훅 실행: DB 초기화 시작")
+        logger.info("Lifespan 훅 실행: DB 및 ApiManager 초기화 시작")
         await db_manager.initialize()
+        await api_manager.initialize()
         yield
-        logger.info("Lifespan 훅 종료")
+        logger.info("Lifespan 훅 종료: ApiManager 셧다운 시작")
+        await api_manager.shutdown()
 
     # 4. FastAPI 서버 객체 생성 및 의존성 주입
     # FastAPIServer 내부에 FastAPI app 객체가 포함되어 있습니다.

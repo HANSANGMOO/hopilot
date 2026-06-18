@@ -36,5 +36,9 @@ DB_DIR = appdata_base / "hopilot" / "db"
 DB_FILE_PATH = DB_DIR / "copilot_history.db"
 
 # 4. 사용자 환경설정(API Key 등) 경로 설정
-USER_ENV_DIR = appdata_base / "hopilot" / "env"
-USER_API_KEYS_FILE = USER_ENV_DIR / "api_keys.env"
+if IS_FROZEN:
+    USER_ENV_DIR = appdata_base / "hopilot" / "env"
+    USER_API_KEYS_FILE = USER_ENV_DIR / "api_keys.env"
+else:
+    USER_ENV_DIR = PROJECT_ROOT / "assets" / "env"
+    USER_API_KEYS_FILE = USER_ENV_DIR / "api_key.env"

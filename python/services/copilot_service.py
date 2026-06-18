@@ -9,10 +9,11 @@ from core.models import (
     HOChunk,
     HOMessage,
     HOreAct,
+    HopilotPayload,
     TextPayload,
 )
 from engine.agent_worker import AgentWorker
-from engine.prompt_engine import PromptEngine
+from engine.payload_engine import PayloadEngine
 
 
 class CopilotService:
@@ -25,12 +26,12 @@ class CopilotService:
         self,
         event_bus: EventBus,
         api_manager: ApiManager,
-        request_engine: PromptEngine,
+        payload_engine: PayloadEngine,
         agent_worker: AgentWorker,
     ):
         self.event_bus = event_bus
         self.api_manager = api_manager
-        self.request_engine = request_engine
+        self.payload_engine = payload_engine
         self.agent_worker = agent_worker
 
     async def process_user_request(
@@ -75,26 +76,23 @@ class CopilotService:
         # 4. CopilotTask 생성 (평탄화 및 매핑)
         task = CopilotTask(
             session_id=dto.session.session_id,
-            query=dto.query,
             memory=dto.session.messages,
             model=dto.model,
             react=react,
         )
 
         # 5. AgentWorker용 콜백 정의 (Closure Pattern)
-        request_engine = self.request_engine
+        payload_engine = self.payload_engine
         api_manager = self.api_manager
 
-        class CopilotCallbacks:
-            async def build_request(self, t: CopilotTask):
-                req = await request_engine.build_request(t)
-                return req
+        class Callbacks:
+            async def payload_builder(self, task) -> HopilotPayload:
+                return await payload_engine.build_payload(task)
 
-            def stream_opener(self, req):
-                # Pass the CopilotRequest and the ModelInfo separately to the ApiManager
-                return api_manager.stream_generate(req, model_info=task.model)
+            def stream_opener(self, payload: HopilotPayload):
+                return api_manager.generate_stream(payload, model_info=task.model)
 
-        callbacks = CopilotCallbacks()
+        callbacks = Callbacks()
 
         # 6. AgentWorker의 AI 스트림을 그대로 중계 (return ❌ → async for + yield ✅)
         async for chunk_dto in self.agent_worker.run(task=task, callbacks=callbacks):

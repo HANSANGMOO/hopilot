@@ -1,13 +1,10 @@
 import json
-from typing import Any, AsyncGenerator, Dict, List, Optional
-
-import httpx
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from api.provider.base_provider import BaseProvider
 from core.models import (
-    CopilotPrompt,
     HOChunk,
-    HOMessage,
+    HopilotPayload,
     StreamPayload,
     TextPayload,
     ThoughtPayload,
@@ -19,16 +16,51 @@ logger = get_logger("ClaudeProvider")
 
 # Anthropic Messages API wire 상수
 ANTHROPIC_VERSION = "2023-06-01"
+# 멀티턴에서 thinking 블록을 재전송하려면 서명(signature)이 필요합니다.
+# Gemini의 thoughtSignature와 동일한 역할로, payload.model_extra에 보관합니다.
+CLAUDE_SIGNATURE = "signature"
 
 
-class ClaudeProvider(BaseProvider):
+# --- Anthropic Request TypedDicts ---
+class ClaudeContentBlock(TypedDict, total=False):
+    type: str
+    text: str
+    thinking: str
+    signature: str
+    id: str
+    name: str
+    input: Dict[str, Any]
+    tool_use_id: str
+    content: Any
+
+
+class ClaudeMessage(TypedDict):
+    role: Literal["user", "assistant"]
+    content: List[ClaudeContentBlock]
+
+
+class ClaudeThinkingConfig(TypedDict):
+    type: Literal["adaptive"]
+
+
+class ClaudePayload(TypedDict, total=False):
+    model: str
+    max_tokens: int
+    stream: bool
+    system: str
+    messages: List[ClaudeMessage]
+    thinking: ClaudeThinkingConfig
+    tools: List[Dict[str, Any]]
+
+
+# ---------------------------------
+
+
+class ClaudeProvider(BaseProvider, provider="claude"):
     """
-    Anthropic Claude REST API 공급자 구현체입니다.
-
-    Messages API(SSE) 스트림을 표준 HOChunk 단위로 변환하여 배출합니다.
+    Anthropic Claude (Messages API) REST 공급자 구현체입니다.
     """
 
-    provider_name = "claude"
     base_url = "https://api.anthropic.com/v1/messages"
 
     def __init__(
@@ -39,87 +71,141 @@ class ClaudeProvider(BaseProvider):
         **kwargs: Any,
     ) -> None:
         super().__init__(api_key=api_key, model=model, base_url=base_url, **kwargs)
-        # 스트리밍 기본값. 필요 시 register 시점에 kwargs로 덮어쓸 수 있습니다.
         self.max_tokens: int = int(self.options.get("max_tokens", 16000))
-        # 어댑티브 사고(Opus 4.8 권장 기본값). 비활성화하려면 enable_thinking=False 전달.
+        # 어댑티브 사고(Opus 4.8 권장). 비활성화하려면 enable_thinking=False 전달.
         self.enable_thinking: bool = bool(self.options.get("enable_thinking", True))
-        self.timeout: float = float(self.options.get("timeout", 600.0))
 
-    async def stream_generate(
-        self,
-        request: CopilotPrompt,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[HOChunk, None]:
-        """
-        Claude Messages REST API(SSE)를 호출하고 raw 이벤트를 HOChunk로 변환해 배출합니다.
-        """
-        payload = self._to_provider_payload(request)
-        if tools:
-            payload["tools"] = tools
+        # [스트리밍 상태] Anthropic은 tool_use 인자(input)를 여러 SSE 이벤트에 걸쳐
+        # 조각(input_json_delta)으로 보냅니다. provider 인스턴스 수명 = 스트림 하나이므로
+        # content_block index 별 누적 버퍼를 인스턴스 속성으로 안전하게 보관합니다.
+        self._tool_buffers: Dict[int, Dict[str, Any]] = {}
 
-        headers = {
+    def build_url(self) -> str:
+        """Anthropic Messages 엔드포인트 (모델은 body에 담기므로 URL은 고정)."""
+        return self.base_url
+
+    def build_headers(self) -> Dict[str, str]:
+        """Anthropic 인증 및 버전 헤더 생성."""
+        return {
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
 
-        # content_block index -> tool_use 누적 버퍼 (스트리밍 중 partial_json 조립용)
-        tool_buffers: Dict[int, Dict[str, Any]] = {}
+    def format_payload(self, payload: HopilotPayload) -> ClaudePayload:
+        """HopilotPayload를 Anthropic Messages 요청(body)으로 변환합니다."""
+        request: ClaudePayload = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
 
-        logger.info(f"[ClaudeProvider] 스트림 요청 시작 - model={self.model}")
+        # 1. System Instruction (top-level system)
+        if payload.system_instructions:
+            request["system"] = payload.system_instructions
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST", self.base_url, headers=headers, json=payload
-            ) as response:
-                if response.status_code != 200:
-                    body = (await response.aread()).decode("utf-8", errors="replace")
-                    logger.error(f"[ClaudeProvider] HTTP {response.status_code} 오류: {body}")
-                    raise httpx.HTTPStatusError(
-                        f"Claude API {response.status_code}: {body}",
-                        request=response.request,
-                        response=response,
-                    )
+        # 2. Messages 구성
+        messages: List[ClaudeMessage] = []
+        for msg in payload.messages:
+            if msg.role == "system":
+                continue  # system은 위에서 별도 처리
 
-                async for line in response.aiter_lines():
-                    # SSE는 'event:'와 'data:' 라인으로 구성됩니다.
-                    # data 페이로드 자체에 'type' 필드가 있어 event 라인 없이도 분기 가능합니다.
-                    if not line or not line.startswith("data:"):
-                        continue
+            role: Literal["user", "assistant"] = "assistant" if msg.role == "ai" else "user"
+            blocks: List[ClaudeContentBlock] = []
 
-                    data_str = line[len("data:") :].strip()
-                    if not data_str:
-                        continue
+            for chunk in msg.chunks:
+                block = self._format_chunk(chunk)
+                if block:
+                    blocks.append(block)
 
-                    try:
-                        event = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        logger.warning(f"[ClaudeProvider] JSON 파싱 실패: {data_str!r}")
-                        continue
+            if blocks:
+                messages.append({"role": role, "content": blocks})
 
-                    for chunk in self._handle_event(event, tool_buffers):
-                        yield chunk
+        request["messages"] = messages
 
-        logger.info("[ClaudeProvider] 스트림 종료")
+        # 3. 어댑티브 사고 (Opus 4.8/4.7은 adaptive만 허용; budget_tokens/온도는 400)
+        if self.enable_thinking:
+            request["thinking"] = {"type": "adaptive"}
 
-    def _handle_event(
-        self, event: Dict[str, Any], tool_buffers: Dict[int, Dict[str, Any]]
-    ) -> List[HOChunk]:
+        # 4. Tools (context에 도구 명세가 있으면 추가)
+        if payload.context and "tools" in payload.context:
+            request["tools"] = payload.context["tools"]
+
+        return request
+
+    def _format_chunk(self, chunk: HOChunk) -> ClaudeContentBlock:
+        """단일 HOChunk를 Anthropic content 블록으로 변환합니다."""
+        block: ClaudeContentBlock = {}
+        payload = chunk.payload
+
+        if payload.type == "text":
+            block["type"] = "text"
+            block["text"] = payload.text
+
+        elif payload.type == "thought":
+            # thinking 블록 재전송엔 signature가 필수입니다. 서명이 없으면(스트리밍 표시용
+            # 사고였던 경우) 재전송 시 거부되므로, 서명이 있을 때만 블록으로 복원합니다.
+            sig = payload.model_extra.get(CLAUDE_SIGNATURE) if payload.model_extra else None
+            if sig:
+                block["type"] = "thinking"
+                block["thinking"] = payload.thought
+                block["signature"] = sig
+
+        elif payload.type == "tool_call":
+            call_id = payload.model_extra.get("id") if payload.model_extra else None
+            block["type"] = "tool_use"
+            block["id"] = call_id or ""
+            block["name"] = payload.tool_name
+            block["input"] = payload.tool_args
+
+        elif payload.type == "tool_output":
+            output_id = payload.model_extra.get("id") if payload.model_extra else None
+            block["type"] = "tool_result"
+            if output_id:
+                block["tool_use_id"] = output_id
+            block["content"] = payload.output
+
+        return block
+
+    def parse_sse_event(self, event_line: str) -> List[HOChunk]:
+        """Anthropic SSE 문자열 라인 파싱 및 변환.
+
+        Anthropic은 'event:'와 'data:' 라인을 쌍으로 보냅니다. data 페이로드 자체에
+        'type' 필드가 있으므로 data 라인만 보고 분기합니다.
         """
-        단일 SSE 이벤트를 0개 이상의 HOChunk로 변환합니다.
-        (이벤트:청크가 1:1이 아니므로 리스트를 반환합니다.)
-        """
-        etype = event.get("type")
+        line = event_line.strip()
+        if not line.startswith("data:"):
+            return []
+
+        data_str = line[len("data:") :].strip()
+        if not data_str:
+            return []
+
+        try:
+            data = json.loads(data_str)
+        except json.JSONDecodeError:
+            return []
+
+        return self._parse_chunk(data)
+
+    def _parse_chunk(self, data: Dict[str, Any]) -> List[HOChunk]:
+        """Anthropic SSE 이벤트(dict)를 HOChunk 리스트로 변환합니다."""
+        etype = data.get("type")
         chunks: List[HOChunk] = []
 
         if etype == "content_block_start":
-            block = event.get("content_block", {})
+            block = data.get("content_block", {})
             if block.get("type") == "tool_use":
-                index = event.get("index", 0)
-                tool_buffers[index] = {"name": block.get("name", ""), "json": ""}
+                index = data.get("index", 0)
+                self._tool_buffers[index] = {
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "json": "",
+                }
 
         elif etype == "content_block_delta":
-            delta = event.get("delta", {})
+            index = data.get("index", 0)
+            delta = data.get("delta", {})
             dtype = delta.get("type")
 
             if dtype == "text_delta":
@@ -128,106 +214,41 @@ class ClaudeProvider(BaseProvider):
                     chunks.append(HOChunk(payload=TextPayload(text=text)))
 
             elif dtype == "thinking_delta":
-                # Opus 4.8은 기본(display=omitted)으로 thinking 텍스트가 비어있습니다.
-                # 내용이 있을 때(display=summarized 설정 시)만 ThoughtPayload로 배출합니다.
+                # 기본(display=omitted)에선 thinking 텍스트가 비어있을 수 있으므로 가드.
                 thought = delta.get("thinking", "")
                 if thought:
                     chunks.append(HOChunk(payload=ThoughtPayload(thought=thought)))
 
             elif dtype == "input_json_delta":
-                index = event.get("index", 0)
-                if index in tool_buffers:
-                    tool_buffers[index]["json"] += delta.get("partial_json", "")
+                if index in self._tool_buffers:
+                    self._tool_buffers[index]["json"] += delta.get("partial_json", "")
+
+            # TODO: signature_delta — 멀티턴 thinking 재전송용 서명 보존(추후).
 
         elif etype == "content_block_stop":
-            index = event.get("index", 0)
-            buf = tool_buffers.pop(index, None)
+            index = data.get("index", 0)
+            buf = self._tool_buffers.pop(index, None)
             if buf is not None:
                 try:
                     args = json.loads(buf["json"]) if buf["json"] else {}
                 except json.JSONDecodeError:
                     args = {}
+                extra = {"id": buf["id"]} if buf["id"] else {}
                 chunks.append(
-                    HOChunk(payload=ToolCallPayload(tool_name=buf["name"], tool_args=args))
+                    HOChunk(
+                        payload=ToolCallPayload(
+                            tool_name=buf["name"], tool_args=args, **extra
+                        )
+                    )
                 )
 
         elif etype == "message_delta":
-            stop_reason = event.get("delta", {}).get("stop_reason")
+            stop_reason = data.get("delta", {}).get("stop_reason")
             if stop_reason:
                 chunks.append(HOChunk(payload=StreamPayload(finish_reason=stop_reason)))
 
         elif etype == "error":
-            err = event.get("error", {})
-            logger.error(f"[ClaudeProvider] 스트림 에러 이벤트: {err}")
+            logger.error(f"[ClaudeProvider] 스트림 에러 이벤트: {data.get('error', {})}")
 
-        # message_start, content_block_start(text/thinking), ping, message_stop은 무시
+        # message_start / message_stop / ping 등은 무시(빈 리스트)
         return chunks
-
-    def _to_provider_payload(self, request: CopilotPrompt) -> Dict[str, Any]:
-        """
-        내부 CopilotRequest를 Anthropic Messages API 페이로드로 변환합니다.
-        """
-        messages = self._build_messages(request)
-
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "stream": True,
-            "messages": messages,
-        }
-
-        if request.system_instructions:
-            payload["system"] = request.system_instructions
-
-        if self.enable_thinking:
-            # Opus 4.8/4.7은 adaptive만 허용됩니다(budget_tokens/온도 파라미터 사용 시 400).
-            payload["thinking"] = {"type": "adaptive"}
-
-        return payload
-
-    def _build_messages(self, request: CopilotPrompt) -> List[Dict[str, Any]]:
-        """history(HOMessage들)와 현재 query를 Anthropic messages 배열로 변환합니다."""
-        messages: List[Dict[str, Any]] = []
-
-        for msg in request.history:
-            role = self._map_role(msg.role)
-            if role is None:
-                continue  # 'system' 등은 top-level system으로 처리되므로 제외
-            text = self._extract_text(msg)
-            if text:
-                messages.append({"role": role, "content": text})
-
-        # 현재 사용자 입력을 마지막 user 턴으로 추가
-        messages.append({"role": "user", "content": request.query})
-        return messages
-
-    @staticmethod
-    def _map_role(role: str) -> Optional[str]:
-        """내부 role('user'/'ai'/'system')을 Anthropic role로 매핑합니다."""
-        if role == "user":
-            return "user"
-        if role == "ai":
-            return "assistant"
-        return None  # system 등은 메시지 배열에서 제외
-
-    @staticmethod
-    def _extract_text(msg: HOMessage) -> str:
-        """HOMessage의 chunk들에서 텍스트 payload만 이어붙여 추출합니다."""
-        parts: List[str] = []
-        for chunk in msg.chunks:
-            payload = chunk.payload
-            if isinstance(payload, TextPayload):
-                parts.append(payload.text)
-        return "".join(parts)
-
-    def _to_ho_chunk(self, raw_chunk: Any) -> HOChunk:
-        """
-        BaseProvider 계약 준수용 단일 변환 진입점.
-
-        SSE 스트림은 이벤트:청크가 1:N이라 실제 변환은 _handle_event에서 수행하며,
-        이 메서드는 단일 delta 이벤트를 받아 첫 HOChunk를 반환합니다(없으면 예외).
-        """
-        chunks = self._handle_event(raw_chunk, {})
-        if not chunks:
-            raise ValueError("변환 가능한 HOChunk가 없는 이벤트입니다.")
-        return chunks[0]

@@ -12,7 +12,7 @@ from typing import (
     Union,
 )
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 도메인 모델의 기준이 되는 현재 스키마 버전 (DB 계층이 이를 참조합니다)
 SCHEMA_VERSION = 1
@@ -22,6 +22,13 @@ SCHEMA_VERSION = 1
 # Level 1: Payloads (최하위 다형성 데이터 요소)
 # ==========================================
 class PayloadBase(BaseModel):
+    """
+    Base class for all payloads.
+    
+    [Known Provider-specific Extra Attributes]
+    - Gemini: `thoughtSignature` (Used to maintain reasoning and tool calls in multi-turn)
+    """
+    model_config = ConfigDict(extra="allow")
     type: str
 
 
@@ -188,31 +195,29 @@ class CopilotInput(BaseModel):
 class CopilotTask(BaseModel):
     task_id: str = Field(default_factory=generate_id("task"))
     session_id: str
-    query: str
     memory: List[HOMessage] = Field(default_factory=list)
     model: Optional[ModelInfo] = None
     react: HOreAct
 
 
-class CopilotPrompt(BaseModel):
+class HopilotPayload(BaseModel):
     """
     Hopilot에서 LLM API로 전달하기 위한 공통 프롬프트 명세(Payload)입니다.
     """
 
     system_instructions: str
-    history: List[HOMessage] = Field(default_factory=list)
+    messages: List[HOMessage] = Field(default_factory=list)
     context: dict = Field(default_factory=dict)
-    query: str
 
 
 class AgentCallbacks(Protocol):
     """AgentWorker가 작업을 수행할 때 호출하는 콜백(포인터)들의 집합입니다."""
 
-    async def build_request(self, task: CopilotTask) -> CopilotPrompt:
-        """CopilotTask를 받아서 LLM API 요청용 모델(CopilotRequest)로 변환합니다."""
+    async def payload_builder(self, task: CopilotTask) -> HopilotPayload:
+        """CopilotTask를 받아서 LLM API 요청용 모델(HopilotPayload)로 변환합니다."""
         ...
 
-    def stream_opener(self, request: CopilotPrompt) -> AsyncGenerator[HOChunk, None]:
+    def stream_opener(self, request: HopilotPayload) -> AsyncGenerator[HOChunk, None]:
         """LLM API 스트림을 열고 실시간 청크를 생성합니다."""
         ...
 

@@ -1,0 +1,9 @@
+# Hopilot Python Backend — development dependencies
+#
+# Install with:  pip install -r requirements-dev.txt
+# (includes the runtime deps via the -r reference below)
+
+-r requirements.txt
+
+# Linter / formatter — configured in pyproject.toml ([tool.ruff]).
+ruff>=0.4

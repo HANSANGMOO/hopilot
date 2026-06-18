@@ -32,11 +32,11 @@ function App() {
       const progressDisposable = signalBus.onProgress<CopilotChunkDTO>((params) => {
         const chunkDTO = params.chunk
         // 파이썬 백엔드에서 내려주는 청크 텍스트를 누적
-        if (chunkDTO.chunk?.text) {
+        if (chunkDTO.chunk?.payload?.type === 'text' && chunkDTO.chunk.payload.text) {
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === aiMsgId
-                ? { ...msg, content: msg.content + chunkDTO.chunk.text }
+                ? { ...msg, content: msg.content + chunkDTO.chunk.payload.text }
                 : msg
             )
           )
