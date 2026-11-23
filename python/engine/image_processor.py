@@ -3,8 +3,8 @@ import base64
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
+from core.attachment import IMAGE_MIME_TYPES
 from utils import get_logger
 
 logger = get_logger("ImageProcessor")
@@ -13,14 +13,7 @@ logger = get_logger("ImageProcessor")
 class ImageProcessor:
     """이미지 파일을 읽어 base64 문자열로 변환합니다."""
 
-    SUPPORTED_MIME_TYPES: frozenset[str] = frozenset({
-        "image/jpeg",
-        "image/png",
-        "image/gif",
-        "image/webp",
-        "image/bmp",
-        "image/tiff",
-    })
+    SUPPORTED_MIME_TYPES: frozenset[str] = IMAGE_MIME_TYPES
 
     def read(self, path: str) -> bytes:
         """파일을 읽어 bytes로 반환합니다."""
@@ -34,18 +27,12 @@ class ImageProcessor:
         """read + encode를 단일 스레드에서 실행하여 base64 문자열을 반환합니다."""
         return await asyncio.to_thread(lambda: self.encode(self.read(path)))
 
-    def classify(self, path: str) -> Literal["url", "uri"]:
-        """경로 형식을 판별해 소스 타입을 반환합니다. inline은 호출자가 직접 지정합니다."""
-        if path.startswith("http://") or path.startswith("https://"):
-            return "url"
-        return "uri"
-
     _MIME_TO_EXT: dict[str, str] = {
         "image/jpeg": ".jpg",
-        "image/png":  ".png",
-        "image/gif":  ".gif",
+        "image/png": ".png",
+        "image/gif": ".gif",
         "image/webp": ".webp",
-        "image/bmp":  ".bmp",
+        "image/bmp": ".bmp",
         "image/tiff": ".tiff",
     }
 

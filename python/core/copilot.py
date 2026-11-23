@@ -24,6 +24,8 @@ from typing import (
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
+from core.attachment import Attachment
+
 SCHEMA_VERSION = 2
 
 
@@ -333,58 +335,6 @@ class HOProject(BaseModel):
 
 
 # ==========================================
-# Attachment DTOs
-# ==========================================
-class AttachmentBase(BaseModel):
-    id: str
-    path: str
-    name: str
-    restriction: Optional[Literal["encrypted", "drm", "permission", "mip"]] = None
-
-
-class ImageAttachment(AttachmentBase):
-    type: Literal["image"] = "image"
-    source_type: Literal["uri", "url", "inline"]
-    encoding: Optional[Literal["base64"]] = None  # uri/inline일 때 "base64", url이면 None
-    data: str
-    mime_type: Optional[str] = None
-
-    def as_payload(self) -> ImagePayload:
-        return ImagePayload(
-            source_type=self.source_type,
-            encoding=self.encoding,
-            ref=self.path,
-            data=self.data,
-            mime_type=self.mime_type,
-        )
-
-
-class DocumentAttachment(AttachmentBase):
-    type: Literal["document"] = "document"
-    source_type: Literal["uri", "url"]
-    document_type: Literal["text", "binary"]
-    encoding: Optional[str] = "unknown"  # 직렬화 방식: "utf-8", "cp949", "base64" / None: 해당 없음 / "unknown": 감지 전
-    ref: str   # DB 저장용: 파일 경로(uri), URL(url)
-    data: Optional[str] = None  # LLM API 전송용 (DB 저장 시 제외)
-    mime_type: Optional[str] = None
-
-    def as_payload(self) -> DocumentPayload:
-        return DocumentPayload(
-            ref=self.ref,
-            name=self.name,
-            data=self.data,
-            mime_type=self.mime_type,
-            encoding=self.encoding,
-        )
-
-
-ProcessedAttachment = Annotated[
-    Union[ImageAttachment, DocumentAttachment],
-    Field(discriminator="type"),
-]
-
-
-# ==========================================
 # Tool
 # ==========================================
 McpTemplateVars = Dict[str, str]
@@ -552,7 +502,7 @@ class CopilotInput(BaseModel):
     model: Optional[ModelInfo] = None
     tool_set: Optional[ToolDTO] = None
     context: Optional[ContextDTO] = None
-    attachments: Optional[List[ProcessedAttachment]] = None
+    attachments: Optional[List[Attachment]] = None
 
 
 class CopilotTask(BaseModel):
@@ -563,7 +513,7 @@ class CopilotTask(BaseModel):
     model: Optional[ModelInfo] = None
     tools: Optional[List[BaseTool]] = None
     react: HOreAct
-    attachments: Optional[List[ProcessedAttachment]] = None
+    attachments: Optional[List[Attachment]] = None
     context: Optional[ContextDTO] = None
 
 

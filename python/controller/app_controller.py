@@ -7,7 +7,7 @@ from contracts.attachment import (
     AttachmentUnloadSignal,
 )
 from core.errors import AttachmentNotFoundError
-from core.models import DocumentAttachment, ImageAttachment
+from core.models import BinaryAttachment, ImageAttachment, TextAttachment
 from contracts.copilot import CopilotRunStreamSignal
 from contracts.model import ModelDTO, ModelListSignal
 from contracts.tool import ToolListSignal
@@ -146,17 +146,17 @@ class AppController:
         match attachment:
             case ImageAttachment():
                 dto_type = "image"
-            case DocumentAttachment():
+            case TextAttachment() | BinaryAttachment():
                 dto_type = "document"
 
         return AttachmentGetDTO(
             id=attachment.id,
             name=attachment.name,
             data=attachment.data,
-            mime_type=attachment.mime_type or "",
+            mime_type=attachment.mime_type,
             type=dto_type,
-            encoding=attachment.encoding if isinstance(attachment, DocumentAttachment) else None,
-            ref=attachment.ref if isinstance(attachment, DocumentAttachment) else None,
+            encoding=None if isinstance(attachment, ImageAttachment) else attachment.encoding,
+            ref=None if isinstance(attachment, ImageAttachment) else attachment.uri,
         ).model_dump()
 
     async def _handle_model_list(self, signal: ModelListSignal) -> list:
