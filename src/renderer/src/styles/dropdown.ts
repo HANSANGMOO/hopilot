@@ -1,0 +1,5 @@
+export const dropdownContent = 'z-50 min-w-[9rem] rounded-xl border border-border bg-popover p-1.5 shadow-xl'
+export const dropdownItem = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-secondary outline-none cursor-default select-none hover:bg-hover hover:text-text-primary focus:bg-hover focus:text-text-primary data-[disabled]:pointer-events-none data-[disabled]:text-text-faint'
+export const dropdownItemDanger = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-500 outline-none cursor-default select-none hover:bg-[var(--color-danger-hover-bg)] hover:text-[var(--color-danger-hover-text)] focus:bg-[var(--color-danger-hover-bg)] focus:text-[var(--color-danger-hover-text)]'
+export const dropdownSubTrigger = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-secondary outline-none cursor-default select-none hover:bg-hover hover:text-text-primary focus:bg-hover focus:text-text-primary data-[state=open]:bg-hover data-[state=open]:text-text-primary'
+export const dropdownSeparator = 'my-1 border-t border-border'

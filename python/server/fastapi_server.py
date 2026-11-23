@@ -4,10 +4,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from contracts.signal import (
     BaseEventSignal,
-    BaseRequestSignal,
+    BaseInboundRequestSignal,
+    BaseOutboundRequestSignal,
     BaseSignal,
     BaseStreamSignal,
-    CancelRequestSignal,
+    CancelEventSignal,
 )
 from core.bus import EventBus, SignalBus
 from core.channel import Channel
@@ -41,34 +42,39 @@ class FastAPIServer:
                 receive_msg_func=websocket.receive_text
             )
 
+            # 2. Channel을 SignalBus에 attach
+            self.signal_bus.attach(self.channel)
+
             try:
-                # 2. Channel의 수신 루프 가동
-                # 클라이언트가 보낸 메시지(JSON 파싱된 Dict)가 지속적으로 배출(yield)됩니다.
+                # 3. Channel의 수신 루프 가동
                 async for payload in self.channel.listen():
                     logger.debug(f"웹소켓 수신 -> Channel 배출: {payload}")
 
-                    # 3. 수신된 데이터를 Pydantic 시그널 객체로 동적 파싱
+                    # 4. 수신된 데이터를 Pydantic 시그널 객체로 동적 파싱
                     try:
                         signal = BaseSignal.resolve_signal(payload)
 
-                        # 4. 시그널의 상속 계층에 따라 논블로킹 라우팅 분기
-                        if isinstance(signal, BaseStreamSignal):
-                            logger.info(f"스트림 시그널 수신: {signal.method} (id={signal.id})")
-                            self.signal_bus.stream_background(signal, send_callback=self.channel.send)
+                        # 5. 시그널의 상속 계층에 따라 논블로킹 라우팅 분기
+                        if isinstance(signal, BaseOutboundRequestSignal):
+                            # invoke()의 짝 — 프론트엔드가 보낸 응답
+                            self.signal_bus.resolve(signal)
 
-                        elif isinstance(signal, BaseRequestSignal):
+                        elif isinstance(signal, BaseStreamSignal):
+                            logger.info(f"스트림 시그널 수신: {signal.method} (id={signal.id})")
+                            self.signal_bus.stream_background(signal)
+
+                        elif isinstance(signal, BaseInboundRequestSignal):
                             logger.info(f"단일 요청 시그널 수신: {signal.method} (id={signal.id})")
-                            self.signal_bus.invoke_background(signal, send_callback=self.channel.send)
+                            self.signal_bus.invoke_background(signal)
 
                         elif isinstance(signal, BaseEventSignal):
-                            if isinstance(signal, CancelRequestSignal):
+                            if isinstance(signal, CancelEventSignal):
                                 target_id = signal.params.get("id")
                                 logger.info(f"취소 시그널 수신: id={target_id}")
-                                if target_id:
-                                    self.signal_bus.cancel_task(target_id)
+                                if target_id is not None:
+                                    self.signal_bus.cancel_task(str(target_id))
                             else:
                                 logger.info(f"이벤트 시그널 수신: {signal.method}")
-                                # SignalBus를 통해 단방향 배출
                                 self.signal_bus.emit(signal)
 
                     except ValueError as ve:
@@ -81,6 +87,7 @@ class FastAPIServer:
             except Exception as e:
                 logger.error(f"웹소켓 통신 중 예외 발생: {e}", exc_info=True)
             finally:
-                # 4. 연결 종료 시 모든 백그라운드 태스크 정리 및 Channel 객체 소멸
+                # 7. 연결 종료 시 모든 백그라운드 태스크 정리, Channel detach
                 self.signal_bus.cancel_all_tasks()
+                self.signal_bus.detach()
                 self.channel = None

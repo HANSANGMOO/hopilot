@@ -1,12 +1,32 @@
+import asyncio
+
+from contracts.copilot import CopilotRunStreamDTO
 from core.bus import EventBus
+from core.errors import HopilotError
 from core.models import (
     AgentCallbacks,
-    CopilotChunkDTO,
     CopilotTask,
+    EType,
+    HOChunk,
+    HOMessage,
+    StreamPayload,
+    ToolCallPayload,
 )
 from utils import get_logger
 
 logger = get_logger("AgentWorker")
+
+
+def _make_error_dto(message: str, session_id: str, ai_message: HOMessage = None) -> CopilotRunStreamDTO:
+    msg = ai_message or HOMessage(role="ai", chunks=[])
+    return CopilotRunStreamDTO(
+        chunk=HOChunk(payload=StreamPayload(event=EType.ERROR, error_message=message)),
+        msg_id=msg.message_id,
+        session_id=session_id,
+        role=msg.role,
+        timestamp=msg.timestamp.isoformat(),
+    )
+
 
 class AgentWorker:
     """
@@ -23,34 +43,71 @@ class AgentWorker:
         callbacks: AgentCallbacks
     ):
         """
-        Task와 콜백 인터페이스(AgentCallbacks)를 받아 
+        Task와 콜백 인터페이스(AgentCallbacks)를 받아
         실시간으로 Chunk를 생성하고 AsyncGenerator 형태로 배출(yield)합니다.
         """
         logger.info(f"[AgentWorker] 스트리밍 시작 - 태스크: {task.task_id}")
 
+        session_id      = task.session_id
+        model           = task.model
+        react           = task.react
+        payload_builder = callbacks.payload_builder
+        stream_opener   = callbacks.stream_opener
+        tool_executor   = callbacks.tool_executor
+
         try:
-            # 2. task 데이터를 기반으로 Provider가 요구하는 프롬프트 페이로드 객체를 생성합니다.
-            payload = await callbacks.payload_builder(task)
+            payload = await payload_builder(task)
+            payload.query = react.messages
+            tool_map = {t.name: t for t in (task.tools or [])}
+            ai_message = react.messages[-1]
 
-            # 2. task.react에 담긴 마지막 메시지(AI Placeholder)와 세션 ID 획득
-            ai_message = task.react.messages[-1]
-            session_id = task.session_id
+            while True:
+                async for chunk in stream_opener(payload):
+                    ai_message.append_chunk(chunk)
+                    yield CopilotRunStreamDTO(
+                        chunk=chunk,
+                        msg_id=ai_message.message_id,
+                        session_id=session_id,
+                        role=ai_message.role,
+                        timestamp=ai_message.timestamp.isoformat(),
+                    )
 
-            # 3. 모델 API를 호출하여 스트림을 열고 청크를 받아옵니다.
-            async for chunk in callbacks.stream_opener(payload):
+                tool_calls = [
+                    c.payload for c in ai_message.chunks
+                    if isinstance(c.payload, ToolCallPayload)
+                ]
+                if not tool_calls or not tool_executor:
+                    break
 
-                # 4. 부모 메시지의 chunks 리스트에 방금 온 조각 추가 (상태 업데이트)
-                ai_message.chunks.append(chunk)
+                tool_result_msg = HOMessage(role="user", chunks=[], react_id=react.react_id)
+                react.add_message(tool_result_msg)
 
-                # 5. 프론트엔드 라우팅 정보를 포함한 DTO 조립 및 배출
-                yield CopilotChunkDTO(
-                    chunk=chunk,
-                    msg_id=ai_message.message_id,
-                    session_id=session_id,
-                    role=ai_message.role
+                async for chunk in tool_executor(tool_calls, tool_map):
+                    tool_result_msg.chunks.append(chunk)
+                    yield CopilotRunStreamDTO(
+                        chunk=chunk,
+                        msg_id=ai_message.message_id,
+                        session_id=session_id,
+                        role=ai_message.role,
+                        timestamp=tool_result_msg.timestamp.isoformat(),
+                    )
+
+                ai_message = HOMessage(
+                    role="ai",
+                    react_id=react.react_id,
+                    model_name=model.display_name if model else None,
                 )
+                react.add_message(ai_message)
 
             logger.info(f"[AgentWorker] 스트리밍 완료 - 태스크: {task.task_id}")
 
+        except asyncio.CancelledError:
+            raise
+
+        except HopilotError as e:
+            logger.error(f"[AgentWorker] 에러 - 태스크: {task.task_id}, {e}")
+            yield _make_error_dto(str(e), session_id, ai_message)
+
         except Exception as e:
-            logger.error(f"[AgentWorker] 스트리밍 중 에러 발생: {e}")
+            logger.error(f"[AgentWorker] 예상치 못한 에러 - 태스크: {task.task_id}", exc_info=True)
+            yield _make_error_dto("알 수 없는 오류가 발생했습니다.", session_id, ai_message)

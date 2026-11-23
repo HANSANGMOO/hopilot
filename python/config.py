@@ -2,43 +2,60 @@ import os
 import sys
 from pathlib import Path
 
-# 1. 빌드(Frozen) 여부 확인
-# PyInstaller 등으로 패키징되면 sys.frozen 속성이 True가 됩니다.
-IS_FROZEN = getattr(sys, 'frozen', False)
+IS_FROZEN = getattr(sys, "frozen", False)
+APPDATA = Path(os.getenv("LOCALAPPDATA", str(Path.home())))
+_HOPILOT_DIR = APPDATA / "hopilot"
 
-# 2. 프로젝트 루트 경로 (PROJECT_ROOT) 설정 및 로그 경로
-if IS_FROZEN:
-    # [빌드/배포 모드]
-    PROJECT_ROOT = Path(sys.executable).parent
-    # 로깅 경로: APPDATA/hopilot/logs
-    appdata_dir = Path(os.getenv("APPDATA", str(Path.home())))
-    LOG_DIR = appdata_dir / "hopilot" / "logs"
-    LOG_FILE_NAME = "hopilot_logs.log"
-else:
-    # [개발(Dev) 모드]
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    # 로깅 경로: hopilot/python/logs
-    LOG_DIR = PROJECT_ROOT / "python" / "logs"
-    LOG_FILE_NAME = "hopilot_dev_logs.log"
-
-# 디버깅을 위한 출력문 (나중에 로거로 대체 가능)
-# print(f"Mode: {'FROZEN (Build)' if IS_FROZEN else 'DEV (Script)'}")
-# print(f"PROJECT_ROOT: {PROJECT_ROOT}")
-
-# --- 사용자 설정 변수들 ---
 API_KEY = os.getenv("API_KEY", "")
 PORT = int(os.getenv("PORT", 8000))
 
-# 3. 데이터베이스(DB) 경로 설정 (현재 미사용)
-# DB는 모드(DEV/BUILD)와 상관없이 항상 사용자의 APPDATA 폴더 내부에 저장하여 데이터 영속성을 보장합니다.
-appdata_base = Path(os.getenv("APPDATA", str(Path.home())))
-DB_DIR = appdata_base / "hopilot" / "db"
+if IS_FROZEN:
+    PROJECT_ROOT = Path(sys.executable).parent
+    RESOURCE_ROOT = Path(sys._MEIPASS) if hasattr(sys, "_MEIPASS") else PROJECT_ROOT
+    LOG_DIR = _HOPILOT_DIR / "logs"
+    LOG_FILE_NAME = "hopilot.log"
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    RESOURCE_ROOT = PROJECT_ROOT
+    LOG_DIR = PROJECT_ROOT / "python" / "logs"
+    LOG_FILE_NAME = "hopilot_dev.log"
+
+
+def get_resource_path(relative_path: str) -> Path:
+    return RESOURCE_ROOT / relative_path
+
+
+EMBEDDED_PYTHON_PATH = get_resource_path("resources/python_embed/python.exe")
+
+EXT_LIB_DIR = _HOPILOT_DIR / "ext_lib"
+
+USER_ENV_DIR = _HOPILOT_DIR / "env"
+USER_API_KEYS_FILE_PATH = USER_ENV_DIR / "api_keys.env"
+
+IMAGE_DIR = _HOPILOT_DIR / "images"
+
+DB_DIR = _HOPILOT_DIR / "db"
 DB_FILE_PATH = DB_DIR / "copilot_history.db"
 
-# 4. 사용자 환경설정(API Key 등) 경로 설정
-if IS_FROZEN:
-    USER_ENV_DIR = appdata_base / "hopilot" / "env"
-    USER_API_KEYS_FILE = USER_ENV_DIR / "api_keys.env"
-else:
-    USER_ENV_DIR = PROJECT_ROOT / "assets" / "env"
-    USER_API_KEYS_FILE = USER_ENV_DIR / "api_key.env"
+MCP_CONFIG_FILE_PATH = _HOPILOT_DIR / "mcp.json"
+
+HOPILOT_DIR_NAME = ".hopilot"
+
+# ── Context (정적/동적 배경지식) ──────────────────────────────────────────
+CONTEXT_DIR = _HOPILOT_DIR / "context"
+STATIC_CONTEXT_PATH = CONTEXT_DIR / "static.md"
+DYNAMIC_CONTEXT_PATH = CONTEXT_DIR / "dynamic.jsonl"
+
+# ── MCP 서버별 로컬 경로 ──────────────────────────────────────────────────
+MCP_SQLITE_DB_PATH = DB_FILE_PATH
+GIT_REPO_PATHS = [
+    PROJECT_ROOT,
+]
+
+# mcp.json 안의 {{VAR}} 플레이스홀더를 실제 경로로 치환할 때 사용
+# Windows 백슬래시 → 슬래시로 통일 (JSON/npx 호환)
+MCP_TEMPLATE_VARS: dict[str, str] = {
+    "SQLITE_DB_PATH": str(MCP_SQLITE_DB_PATH).replace("\\", "/"),
+    "GIT_REPO_PATH": str(GIT_REPO_PATHS[0]).replace("\\", "/"),
+    "HOPILOT_DIR": str(_HOPILOT_DIR).replace("\\", "/"),
+}

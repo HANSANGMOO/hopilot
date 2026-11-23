@@ -42,8 +42,22 @@ class BaseProvider(ABC):
             method="POST",
             url=self.build_url(),
             headers=self.build_headers(),
-            json_body=self.format_payload(payload),
+            json_body=self.optimize_payload(self.format_payload(payload)),
         )
+
+    def _build_config(self) -> Any:
+        """
+        Provider별 요청 설정을 빌드하는 hook입니다.
+        기본 구현은 no-op이며, 각 Provider가 필요에 따라 override합니다.
+        """
+        return {}
+
+    def optimize_payload(self, payload: Any) -> Any:
+        """
+        전송 직전 payload를 최적화하는 확장 포인트입니다.
+        기본 구현은 no-op이며, 각 Provider가 필요에 따라 override합니다.
+        """
+        return payload
 
     @abstractmethod
     def build_url(self) -> str:

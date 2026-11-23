@@ -1,3 +1,9 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_classes = ["Test*", "Describe*"]
+python_functions = ["test_*", "it_*"]
+
 [tool.ruff]
 target-version = "py311"   # ← 위에서 확인한 버전으로 (3.11이면 py311, 3.10이면 py310...)
 line-length = 100

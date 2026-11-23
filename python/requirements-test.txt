@@ -1,0 +1,4 @@
+pytest
+pytest-anyio
+anyio[asyncio]
+aiofiles

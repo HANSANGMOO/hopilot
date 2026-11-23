@@ -1,10 +1,8 @@
 import os
 import pytest
-import pytest_asyncio
-from typing import AsyncGenerator
 
 from api.api_manager import ApiManager
-from core.models import ModelInfo, HopilotPayload, HOMessage, HOChunk, TextPayload
+from core.models import EType, ModelInfo, HopilotPayload, HOMessage, HOChunk, TextPayload
 
 # .env 파일 파싱 로직
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../assets/env/api_key.env"))
@@ -60,9 +58,16 @@ async def test_gemini_integration():
         print("\n[Gemini 응답 전문]:", full_text)
         
         # 스트림 종료 마커 검증
-        stream_chunks = [c for c in chunks_received if c.payload.type == "stream_end"]
+        stream_chunks = [c for c in chunks_received if c.payload.type == "stream" and c.payload.event == EType.MESSAGE_END]
         assert len(stream_chunks) > 0, "스트림 종료(StreamPayload) 청크가 수신되지 않았습니다."
         assert stream_chunks[-1].payload.finish_reason is not None
+
+        # thought 청크 검증
+        thought_chunks = [c for c in chunks_received if c.payload.type == "thought"]
+        print(f"\n[Thought 청크 수]: {len(thought_chunks)}개")
+        assert len(thought_chunks) > 0, "thought 청크가 수신되지 않았습니다. 게이트웨이가 thought를 반환하지 않습니다."
+        full_thought = "".join(c.payload.thought for c in thought_chunks)
+        print(f"[Thought 전문]: {full_thought[:200]}")
 
     finally:
         await manager.shutdown()

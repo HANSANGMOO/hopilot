@@ -2,10 +2,21 @@ from typing import Any, AsyncGenerator, Dict, List, Type, Optional
 import httpx
 
 from api.provider.base_provider import BaseProvider
-from api.provider.gemini_provider import GeminiProvider
-from api.provider.claude_provider import ClaudeProvider
-from api.provider.openai_provider import OpenAIProvider
+from api.provider.gemini import GeminiProvider
+from api.provider.claude import ClaudeProvider
+from api.provider.openai import OpenAIProvider
+from api.provider.local import LocalProvider
+from api.provider.exaone import ExaoneProvider
 from contracts.api import HttpRequestSpec
+from core.errors import (
+    LlmError,
+    LlmAuthError,
+    LlmRateLimitError,
+    LlmServerError,
+    LlmBadRequestError,
+    LlmTimeoutError,
+    LlmConnectionError,
+)
 from core.models import HopilotPayload, HOChunk, ModelInfo
 from utils import get_logger
 
@@ -46,15 +57,16 @@ class ApiManager:
         """퍼사드 패턴: 현재 레지스트리에 자동 등록된 모든 Provider 이름(ID) 목록을 반환합니다."""
         return list(BaseProvider.registry.keys())
 
-    def create_provider(self, provider: str, api_key: str, model_id: str) -> BaseProvider:
+    def create_provider(self, provider: str, api_key: str, model_id: str, options: Dict = None) -> BaseProvider:
         """
         이름에 해당하는 공급자 클래스를 찾아, api_key와 model_id로 인스턴스화하여 반환합니다.
+        options는 llm_config.yaml에서 로드된 provider 전용 설정값을 **kwargs로 전달합니다.
         """
         provider_cls = BaseProvider.registry.get(provider)
         if not provider_cls:
             raise ValueError(f"'{provider}' 공급자 클래스가 지원되지 않습니다.")
 
-        return provider_cls(api_key=api_key, model=model_id)
+        return provider_cls(api_key=api_key, model=model_id, **(options or {}))
 
     async def generate_stream(
         self,
@@ -65,17 +77,14 @@ class ApiManager:
         넘겨받은 model 정보를 이용해 공급자를 런타임에 인스턴스화하고, 
         Provider로부터 명세(Spec)를 받아 실제 HTTP 통신(SSE 스트리밍)을 수행합니다.
         """
-        # 1. API 키 검증 및 Provider 인스턴스 생성
-        if not model_info.provider or not model_info.api_key:
-            raise ValueError("Provider 및 API Key가 ModelInfo에 필요합니다.")
-            
-        provider = self.create_provider(model_info.provider, model_info.api_key, model_info.id)
+        # 1. Provider 인스턴스 생성
+        provider = self.create_provider(model_info.provider, model_info.api_key, model_info.id, model_info.options)
 
         # 2. Provider에게 "이 Payload를 보낼 건데 URL, Header, Body 좀 만들어줘" (순수 매핑)
         req_spec: HttpRequestSpec = provider.build_http_spec(payload)
 
         # 3. 내부 래핑 함수 호출 (Tenacity 등을 사용해 Timeout, 429 Retry 정책 적용 가능)
-        async for line in self._safe_stream_request(req_spec):
+        async for line in self._request_stream(req_spec):
             # 4. SSE 한 줄(line)을 읽을 때마다 다시 Provider에게 파싱 위임
             chunks = provider.parse_sse_event(line)
             
@@ -83,9 +92,7 @@ class ApiManager:
             for chunk in chunks:
                 yield chunk
 
-    # [내부 재시도 래퍼 함수]
-    # @tenacity.retry(stop=..., wait=...)
-    async def _safe_stream_request(self, req_spec: HttpRequestSpec) -> AsyncGenerator[str, None]:
+    async def _request_stream(self, req_spec: HttpRequestSpec) -> AsyncGenerator[str, None]:
         """httpx.AsyncClient.stream을 통해 스트림으로 연결하고 SSE 라인을 반복적으로 yield합니다."""
         if self._client is None:
             raise RuntimeError("ApiManager가 초기화되지 않았습니다. initialize()를 먼저 호출하세요.")
@@ -99,14 +106,30 @@ class ApiManager:
             ) as response:
                 if response.status_code >= 400:
                     await response.aread()
-                    logger.error(f"HTTP Error {response.status_code}: {response.text}")
-                    response.raise_for_status()
+                    self._raise_for_status(response.status_code, response.text)
                 async for line in response.aiter_lines():
                     yield line
-        except httpx.HTTPStatusError as e:
-            error_body = await e.response.aread()
-            logger.error(f"HTTP Error {e.response.status_code}: {error_body.decode('utf-8', errors='ignore')}")
+
+        except LlmError:
             raise
-        except Exception as e:
-            logger.error(f"Stream Request Failed: {str(e)}")
-            raise
+
+        except httpx.TimeoutException as e:
+            logger.error(f"LLM 응답 시간 초과: {e}")
+            raise LlmTimeoutError("LLM 응답 대기 시간이 초과됐습니다.") from e
+
+        except httpx.RequestError as e:
+            logger.error(f"네트워크 연결 실패: {e}")
+            raise LlmConnectionError("LLM 공급자에 대한 네트워크 연결에 실패했습니다.") from e
+
+    def _raise_for_status(self, code: int, body: str) -> None:
+        """HTTP 상태 코드를 LlmError 계열로 변환하여 던집니다."""
+        logger.error(f"HTTP {code}: {body}")
+        match code:
+            case 401:
+                raise LlmAuthError("API 키가 올바르지 않습니다.", status_code=code)
+            case 429:
+                raise LlmRateLimitError("요청 한도를 초과했습니다.", status_code=code)
+            case c if c >= 500:
+                raise LlmServerError("LLM 서버 오류가 발생했습니다.", status_code=code)
+            case _:
+                raise LlmBadRequestError("잘못된 요청입니다.", status_code=code)

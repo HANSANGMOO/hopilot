@@ -5,107 +5,92 @@ import {
   AbstractMessageWriter,
   Message,
   DataCallback,
-  RequestType,
   NotificationType,
   Disposable,
   CancellationToken
 } from 'vscode-jsonrpc/browser'
+import { RequestBus } from './RequestBus'
 
-// 1. IpcMessageReader: Forwards messages ('ho-server-signal') from the Main process to vscode-jsonrpc
+// ─────────────────────────────────────────────
+// Transport Layer (IPC 브릿지)
+// ─────────────────────────────────────────────
+
 class IpcMessageReader extends AbstractMessageReader {
-  private disposable: (() => void) | null = null
-
   public listen(callback: DataCallback): Disposable {
-    const listener = (_event: any, payload: any) => {
-      // payload is already JSON.parsed as an Object (Message) in the Main process (Channel)
+    const cleanup = window.api.on('ho-server-signal', (payload) => {
       callback(payload as Message)
-    }
-
-    // @ts-ignore: using window.electron.ipcRenderer
-    window.electron.ipcRenderer.on('ho-server-signal', listener)
-
-    this.disposable = () => {
-      // @ts-ignore
-      window.electron.ipcRenderer.removeListener('ho-server-signal', listener)
-    }
-
-    return {
-      dispose: () => {
-        if (this.disposable) {
-          this.disposable()
-          this.disposable = null
-        }
-      }
-    }
+    })
+    return { dispose: cleanup }
   }
 }
 
-// 2. IpcMessageWriter: Sends messages created by vscode-jsonrpc to the Main process ('ho-signal')
 class IpcMessageWriter extends AbstractMessageWriter {
   public write(msg: Message): Promise<void> {
-    // @ts-ignore: using window.api.sendSignal
-    window.api.sendSignal(msg)
+    window.api.send('ho-signal', msg)
     return Promise.resolve()
   }
-
   public end(): void {}
 }
 
-// 3. SignalBus Class Definition
+// ─────────────────────────────────────────────
+// SignalBus — Python signal_bus.py 대응
+// ─────────────────────────────────────────────
+
 export class SignalBus {
   private connection: MessageConnection
+  public readonly requests: RequestBus
 
   constructor() {
     const reader = new IpcMessageReader()
     const writer = new IpcMessageWriter()
-    
-    // Create vscode-jsonrpc connection
     this.connection = createMessageConnection(reader, writer)
-    
-    // Start connection listening loop
     this.connection.listen()
-    console.log('[SignalBus] vscode-jsonrpc connection initialized successfully')
+    this.requests = new RequestBus(this.connection)
   }
 
   /**
-   * Sends a Request to the backend and waits for the final response.
-   * @param method JSON-RPC method name (e.g., 'copilot/send')
-   * @param params Parameters to send (e.g., { session_id: '...', query: '...' })
-   * @param token (Optional) CancellationToken for cancellation
+   * [EventBus] 단방향 이벤트 발신. 응답을 기다리지 않음.
+   * Python: signal_bus.emit(signal)
    */
-  public async sendRequest<P, R>(
-    method: string, 
-    params: P, 
-    token?: CancellationToken
+  public async emit<P>(method: string, params: P): Promise<void> {
+    const type = new NotificationType<P>(method)
+    await this.connection.sendNotification(type, params as any)
+  }
+
+  /**
+   * [RequestBus] 프론트 → 백엔드 요청 후 단일 응답 대기.
+   * Python: signal_bus.invoke_background(signal, callback)
+   */
+  public async invoke<P, R>(method: string, params: P, token?: CancellationToken): Promise<R> {
+    return this.requests.invoke<P, R>(method, params, token)
+  }
+
+  /**
+   * [StreamBus] 요청 후 청크($/progress)를 onChunk로 수신하고, 완료 시 최종 응답 반환.
+   * Python: signal_bus.stream_background(signal, callback)
+   */
+  public async stream<P, C, R>(
+    method: string,
+    params: P,
+    onChunk: (chunk: C, token?: string | number) => void,
+    token?: CancellationToken,
   ): Promise<R> {
-    const requestType = new RequestType<P, R, any>(method)
-    return this.connection.sendRequest(requestType, params, token)
+    const progressType = new NotificationType<{ token: string | number; chunk: C }>('$/progress')
+
+    const disposable = this.connection.onNotification(progressType, ({ token, chunk }) => {
+      onChunk(chunk, token)
+    })
+
+    try {
+      return await this.invoke<P, R>(method, params, token)
+    } finally {
+      disposable.dispose()
+    }
   }
 
-  /**
-   * Receives real-time '$/progress' streaming notifications sent from the backend.
-   * @param callback Callback in the form of (token: Request ID, chunk: Actual data)
-   */
-  public onProgress<T>(callback: (params: { token: string | number, chunk: T }) => void): Disposable {
-    const notificationType = new NotificationType<{ token: string | number, chunk: T }>('$/progress')
-    return this.connection.onNotification(notificationType, callback)
-  }
-
-  /**
-   * Sends a one-way Notification to the backend.
-   */
-  public sendNotification<P>(method: string, params: P): void {
-    const notificationType = new NotificationType<P>(method)
-    this.connection.sendNotification(notificationType, params)
-  }
-
-  /**
-   * Closes the connection.
-   */
-  public dispose() {
+  public dispose(): void {
     this.connection.dispose()
   }
 }
 
-// Export Singleton Instance
 export const signalBus = new SignalBus()

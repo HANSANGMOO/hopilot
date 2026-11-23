@@ -39,6 +39,15 @@ class BaseEventBus(Generic[T]):
             exc = task.exception()
             logger.error(f"[{self.bus_name}] 예외 발생: {exc}", exc_info=exc)
 
+    async def shutdown(self):
+        tasks = list(self._background_tasks)
+        if not tasks:
+            return
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"[{self.bus_name}] {len(tasks)}개 태스크 취소 완료")
+
     def on(self, msg_type: Type[T]):
         """데코레이터 형태로 구독을 지원합니다."""
         def decorator(callback: Callable[[T], Awaitable[None]]):

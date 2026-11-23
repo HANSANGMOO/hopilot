@@ -19,8 +19,10 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 
 # --- Persistence ---
-# Async SQLite driver (db/db_manager.py).
+# Async SQLite driver (io_/db_manager.py).
 aiosqlite>=0.19
+# Async file I/O (io_/knowledge_graph_manager.py).
+aiofiles>=23.0
 
 # --- HTTP client (LLM providers) ---
 # Async streaming HTTP for provider REST/SSE calls (api/provider/*).
@@ -31,6 +33,23 @@ httpx>=0.27
 python-dotenv>=1.0
 # Parses llm_config.yaml model metadata (services/llm_model_service.py).
 PyYAML>=6.0
+
+# --- File processing ---
+# Text file encoding detection (engine/document_processor.py).
+charset-normalizer>=3.3
+# Document parsers (engine/parsers/).
+PyMuPDF>=1.24          # pdf_parser
+python-docx>=1.1       # docx_parser
+python-pptx>=0.6       # pptx_parser
+openpyxl>=3.1          # spreadsheet_parser (xlsx)
+xlrd>=2.0              # spreadsheet_parser (xls)
+
+# --- MCP ---
+# MCP client SDK — mcp/client.py (stdio & SSE transport).
+mcp>=1.0
+# Windows API bindings required by mcp on Windows. Install via conda for proper setup:
+#   conda install pywin32
+pywin32>=306
 
 # --- Typing back-compat ---
 # contracts/copilot.py imports TypedDict from typing_extensions.

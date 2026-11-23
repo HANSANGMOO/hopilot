@@ -6,23 +6,114 @@ models:
     display_name: "Gemini 3.1 Pro"
     provider: "gemini"
     is_default: false
+    options:
+      thinking_level: "high"
+      include_thoughts: true
+      temperature: 1.0
+      max_tokens: 8192
 
-  - id: "gemini-3.5-flash"
-    display_name: "Gemini 3 Flash"
+  - id: "gemini-3.8-flash"
+    display_name: "Gemini 3.8 Flash"
     provider: "gemini"
     is_default: true
+    options:
+      base_url: "https://generativelanguage.googleapis.com/v1beta/models"
+      thinking_level: "high"
+      include_thoughts: true
+      temperature: 1.0
+      max_tokens: 8192
 
-  - id: "gemini-3-flash-preview"
-    display_name: "Gemini 3 Flash"
+  - id: "gemini-4-hydrogen"
+    display_name: "Gemini 4 Hydrogen"
     provider: "gemini"
-    is_default: false
-  
-  - id: "claude-3-5-sonnet"
-    display_name: "Claude 3.5 Sonnet"
+    is_default: true
+    options:
+      base_url: "https://generativelanguage.googleapis.com/v1beta/models"
+      thinking_level: "high"
+      include_thoughts: true
+      temperature: 1.0
+      max_tokens: 8192
+
+  - id: "claude-sonnet-5-5"
+    display_name: "Claude Sonnet 5.5"
     provider: "claude"
     is_default: false
+    options:
+      thinking_mode: "adaptive"
+      #effort: "xhigh"
+      thinking_display: "summarized"
+      max_tokens: 64000
+      enable_cache: true
 
-  - id: "gpt-4o"
-    display_name: "GPT-4o"
+  - id: "claude-haiku-5-5"
+    display_name: "Claude Haiku 5.5"
+    provider: "claude"
+    is_default: false
+    options:
+      thinking_mode: "adaptive"
+      #effort: "xhigh"
+      thinking_display: "summarized"
+      max_tokens: 64000
+      enable_cache: true
+
+  - id: "gpt-6-luna"
+    display_name: "GPT-6 Luna"
     provider: "openai"
     is_default: false
+    options:
+      max_output_tokens: 10000
+      reasoning_effort: "high"
+      truncation: "auto"
+      text:
+        verbosity: "low"
+
+  - id: "gpt-5.6-terra"
+    display_name: "GPT-5.6 Terra"
+    provider: "openai"
+    is_default: false
+    options:
+      max_output_tokens: 10000
+      reasoning_effort: "high"
+      truncation: "auto"
+      text:
+        verbosity: "medium"
+
+  - id: "gpt-6.1-sol"
+    display_name: "GPT-6.1 SOL"
+    provider: "openai"
+    is_default: false
+    options:
+      max_output_tokens: 10000
+      reasoning_effort: "max"
+      truncation: "auto"
+
+  - id: "nvidia/nemotron-3.5-super-vl"
+    display_name: "Nvidia Nemotron 3.5 Super VL"
+    provider: "local"
+    is_default: false
+    options:
+      max_tokens: 16000
+
+  - id: "google/gemma4-26B"
+    display_name: "Google Gemma 4"
+    provider: "local"
+    is_default: false
+    options:
+      max_tokens: 16000
+
+  - id: "openai/gpt-oss-120B"
+    display_name: "GPT OSS 120B"
+    provider: "local"
+    is_default: false
+    options:
+      max_tokens: 16000
+
+  - id: "k-exaone_v2.5"
+    display_name: "K-EXAONE 2.5"
+    provider: "exaone"
+    is_default: false
+    options:
+      max_tokens: 16384
+      temperature: 1.0
+      top_p: 0.95
+      reasoning_effort: "high"

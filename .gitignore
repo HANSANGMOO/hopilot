@@ -222,6 +222,10 @@ __marimo__/
 
 # Tests
 tests/scratch/
+python/tests/scratch/
+
+# Embedded Python runtime
+resources/python_embed/
 
 # Node
 node_modules

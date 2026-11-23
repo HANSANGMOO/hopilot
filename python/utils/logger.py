@@ -14,8 +14,6 @@ def setup_logger(app_name: str = "Hopilot", level: int = logging.INFO) -> loggin
 
     # 핸들러 중복 추가 방지
     if not logger.handlers:
-        # 1. 로그 폴더가 없으면 자동 생성
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
         log_file_path = LOG_DIR / LOG_FILE_NAME
 
         # 2. 파일 핸들러 (지정된 경로의 파일에 로그 기록)

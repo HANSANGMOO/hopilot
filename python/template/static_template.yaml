@@ -1,0 +1,13 @@
+# Static Context — 프로젝트 메타 정보
+# 모든 항목은 선택(optional)입니다. 채운 내용은 매 대화마다 LLM에게 배경으로 전달됩니다.
+# 자주 바뀌는 작업 상세 내용은 여기가 아니라 Dynamic Context(Knowledge Graph)에 기록하세요.
+
+name: ""  # 프로젝트 이름
+
+workspace: ""  # 프로젝트 폴더 경로
+
+type: ""  # 프로젝트 성격. 예: 개발, 분석, 연구
+
+purpose: ""  # 이 프로젝트가 존재하는 이유. 1~2문장 권장
+
+stakeholders: []  # 관련 인물/조직. 예: [{name: 현대자동차 OOO 연구원, role: PM}]

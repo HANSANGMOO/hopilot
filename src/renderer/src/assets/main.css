@@ -1,6 +1,131 @@
 @import 'tailwindcss';
-/* 배경색은 눈이 편한 다크모드 색상으로 하나 지정해 둡니다 */
-body {
-  background-color: #0d1117;
-  color: #c9d1d9;
+@plugin "@tailwindcss/typography";
+
+@keyframes slideDown {
+  from { height: 0; opacity: 0; }
+  to   { height: var(--radix-collapsible-content-height); opacity: 1; }
 }
+
+@keyframes slideUp {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to   { height: 0; opacity: 0; }
+}
+
+@theme {
+  --animate-slideDown: slideDown 150ms ease-out;
+  --animate-slideUp: slideUp 150ms ease-in;
+
+  --color-base:     #0d1117;
+  --color-surface:  #161b22;
+  --color-popover:  #1c2128;
+  --color-elevated: #1f2937;
+  --color-syntax:   #1e1e1e;
+
+  --color-border-strong: #1f2937;
+  --color-border:        #374151;
+  --color-border-input:  #4b5563;
+
+  --color-text-primary:   #e5e7eb;
+  --color-text-secondary: #d1d5db;
+  --color-text-tertiary:  #9ca3af;
+  --color-text-muted:     #6b7280;
+  --color-text-faint:     #4b5563;
+
+  --color-brand:          #2563eb;
+  --color-brand-text:     #ffffff;
+  --color-tool-active:     #ffffff;
+  --color-icon:            #9ca3af;
+  --color-hopi-bg:         #1f2937;
+  --color-hopi-eye:        #60a5fa;
+
+  --color-focus-ring:      rgba(59, 130, 246, 0.5);
+  --color-session-active:  rgba(59, 130, 246, 0.25);
+  --color-block-default-bg:  rgba(31, 41, 55, 0.3);
+  --color-inline-code:       #fb923c;
+  --color-tool-success:      #4ade80;
+  --color-tool-error:        #f87171;
+  --color-block-tool-border: rgba(59, 130, 246, 0.2);
+  --color-block-tool-bg:     rgba(59, 130, 246, 0.05);
+  --color-danger-hover-bg:   rgba(239, 68, 68, 0.2);
+  --color-danger-hover-text: #f87171;
+  --color-hover:           #374151;
+
+  --color-scrollbar:       #374151;
+  --color-scrollbar-hover: #4b5563;
+
+  --color-partial-select: #1e3a5f;
+}
+
+[data-theme="light"] {
+  --color-base:     #faf8f5;
+  --color-surface:  #f2ede6;
+  --color-popover:  #faf8f5;
+  --color-elevated: #e8e2d8;
+  --color-syntax:   #f2ede6;
+
+  --color-border-strong: #ccc4b8;
+  --color-border:        #d8d0c4;
+  --color-border-input:  #a89888;
+
+  --color-text-primary:   #1f2328;
+  --color-text-secondary: #2d333b;
+  --color-text-tertiary:  #444c56;
+  --color-text-muted:     #57606a;
+  --color-text-faint:     #57606a;
+
+  --color-brand:          #ebe5db;
+  --color-brand-text:     #3d1f0e;
+  --color-tool-active:     #1f2328;
+  --color-icon:            #3b4450;
+  --color-hopi-bg:         #e4ddd4;
+  --color-hopi-eye:        #8b7a62;
+
+  --color-focus-ring:      rgba(155, 140, 120, 0.5);
+  --color-session-active:  rgba(155, 140, 120, 0.22);
+  --color-block-default-bg:  rgba(155, 140, 120, 0.07);
+  --color-inline-code:       #c0392b;
+  --color-tool-success:      #16a34a;
+  --color-tool-error:        #dc2626;
+  --color-block-tool-border: rgba(155, 140, 120, 0.22);
+  --color-block-tool-bg:     rgba(155, 140, 120, 0.05);
+  --color-danger-hover-bg:   rgba(239, 68, 68, 0.12);
+  --color-danger-hover-text: #dc2626;
+  --color-hover:           #e0d9ce;
+
+  --color-scrollbar:       #ccc4b8;
+  --color-scrollbar-hover: #a89888;
+
+  --color-partial-select: rgba(155, 140, 120, 0.15);
+}
+
+.msg-input-box:focus-within {
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 1px var(--color-focus-ring);
+}
+
+[data-theme="dark"] .prose {
+  --tw-prose-body:        var(--color-text-primary);
+  --tw-prose-headings:    var(--color-text-primary);
+  --tw-prose-lead:        var(--color-text-secondary);
+  --tw-prose-links:       #60a5fa;
+  --tw-prose-bold:        var(--color-text-primary);
+  --tw-prose-counters:    var(--color-text-tertiary);
+  --tw-prose-bullets:     var(--color-text-tertiary);
+  --tw-prose-hr:          var(--color-border);
+  --tw-prose-quotes:      var(--color-text-secondary);
+  --tw-prose-quote-borders: var(--color-border);
+  --tw-prose-captions:    var(--color-text-muted);
+  --tw-prose-code:        var(--color-inline-code);
+  --tw-prose-th-borders:  var(--color-border);
+  --tw-prose-td-borders:  var(--color-border);
+}
+
+body {
+  background-color: var(--color-base);
+  color: var(--color-text-primary);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-scrollbar); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-scrollbar-hover); }

@@ -1,10 +1,13 @@
 import asyncio
 import logging
 from datetime import datetime
+
+from core.models import KST
 from typing import Dict, Optional
 
+from core.errors import MessageNotFoundError, SessionNotFoundError
 from core.models import HOMessage, HOSession
-from db.db_manager import DBManager
+from io_.db_manager import DBManager
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +24,9 @@ class SessionService:
         # [대기 상태] 현재 DB에서 불러오고 있어 곧 활성화될 세션들 (동시성 충돌 방지용)
         self._pending_sessions: Dict[str, asyncio.Task] = {}
 
-    async def create_session(self, title: str = "New Session") -> HOSession:
+    async def create_session(self, title: str = "New Session", project_id: Optional[str] = None) -> HOSession:
         """새로운 세션을 생성하고, 메모리에 올린 뒤 DB에 저장합니다."""
-        session = HOSession(title=title)
+        session = HOSession(title=title, project_id=project_id)
 
         # 메모리에 적재
         self.active_sessions[session.session_id] = session
@@ -68,15 +71,53 @@ class SessionService:
             if session_id in self._pending_sessions:
                 del self._pending_sessions[session_id]
 
+    async def resolve(self, session_id: Optional[str]) -> HOSession:
+        """session_id로 세션을 찾고, 없거나 None이면 새로 생성하여 반환합니다."""
+        if session_id:
+            session = await self.get_session(session_id)
+            if session:
+                return session
+        return await self.create_session()
+
+    async def list_sessions_in(self, project_id: str) -> list:
+        rows = await self.db.execute_query(
+            "SELECT id, title, updated_at FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
+            (project_id,)
+        )
+        return [dict(row) for row in rows]
+
+    async def list_sessions(self) -> list:
+        """세션 목록을 메타데이터만 조회합니다. messages 로딩 없이 DB에서 직접 읽습니다."""
+        rows = await self.db.execute_query(
+            "SELECT id, title, updated_at, project_id FROM sessions ORDER BY updated_at DESC"
+        )
+        return [dict(row) for row in rows]
+
     async def update_title(self, session_id: str, new_title: str):
         """세션의 제목을 변경하고 즉시 커밋합니다."""
         session = await self.get_session(session_id)
         if not session:
-            raise ValueError(f"Session {session_id} not found.")
+            raise SessionNotFoundError(f"Session {session_id} not found.")
 
         session.title = new_title
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now(KST)
         await self.commit_session(session_id)
+
+    async def update_session(self, session_id: str, patch: dict) -> HOSession:
+        """patch에 포함된 필드만 선택적으로 업데이트하고 변경된 세션을 반환합니다."""
+        if "title" in patch:
+            await self.update_title(session_id, patch["title"])
+
+        session = await self.get_session(session_id)
+        if not session:
+            raise SessionNotFoundError(f"Session {session_id} not found.")
+
+        if "project_id" in patch:
+            session.project_id = patch["project_id"]
+            session.updated_at = datetime.now(KST)
+            await self.commit_session(session_id)
+
+        return session
 
     async def add_message(self, session_id: str, message: HOMessage):
         """
@@ -85,10 +126,10 @@ class SessionService:
         """
         session = await self.get_session(session_id)
         if not session:
-            raise ValueError(f"Session {session_id} not found.")
+            raise SessionNotFoundError(f"Session {session_id} not found.")
 
         session.messages.append(message)
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now(KST)
         logger.debug(f"Added message to session {session_id} in memory.")
 
     async def commit_session(self, session_id: str):
@@ -113,6 +154,37 @@ class SessionService:
             await self.commit_session(session_id)
             del self.active_sessions[session_id]
             logger.debug(f"Session {session_id} deactivated and removed from memory.")
+
+    async def fork_session(self, session_id: str, message_id: str, project_id: Optional[str] = None) -> HOSession:
+        """특정 메시지 직전까지의 히스토리를 복사하여 새 세션을 생성합니다.
+
+        project_id가 명시적으로 전달되면 그 값을 사용하고, 그렇지 않으면 원본 세션의
+        project_id를 그대로 상속합니다.
+        """
+        source = await self.get_session(session_id)
+        if not source:
+            raise SessionNotFoundError(f"Session {session_id} not found.")
+        idx = next((i for i, m in enumerate(source.messages) if m.message_id == message_id), None)
+        if idx is None:
+            raise MessageNotFoundError(f"Message {message_id} not found in session {session_id}.")
+        resolved_project_id = project_id if project_id is not None else source.project_id
+        forked = HOSession(title=source.title, project_id=resolved_project_id, messages=list(source.messages[:idx]))
+        self.active_sessions[forked.session_id] = forked
+        await self.db.create("sessions", forked.to_db_dict())
+        logger.info(f"Forked session {session_id} → {forked.session_id} at message {message_id}")
+        return forked
+
+    async def truncate_messages(self, session_id: str, message_id: str):
+        """특정 message_id부터 끝까지 제거하고 DB에 저장합니다."""
+        session = await self.get_session(session_id)
+        if not session:
+            raise SessionNotFoundError(f"Session {session_id} not found.")
+        idx = next((i for i, m in enumerate(session.messages) if m.message_id == message_id), None)
+        if idx is None:
+            raise MessageNotFoundError(f"Message {message_id} not found in session {session_id}.")
+        session.messages = session.messages[:idx]
+        session.updated_at = datetime.now(KST)
+        await self.commit_session(session_id)
 
     async def delete_session(self, session_id: str):
         """메모리와 DB 양쪽에서 세션을 완전히 삭제합니다."""
