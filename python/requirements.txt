@@ -35,6 +35,8 @@ python-dotenv>=1.0
 PyYAML>=6.0
 
 # --- File processing ---
+# Content-based MIME type detection for extensionless files (utils/mime.py).
+filetype>=1.2
 # Text file encoding detection (engine/document_processor.py).
 charset-normalizer>=3.3
 # Document parsers (engine/parsers/).
