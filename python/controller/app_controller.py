@@ -1,13 +1,9 @@
 from contracts.attachment import (
     AttachmentDeleteSignal,
-    AttachmentGetDTO,
-    AttachmentLoadDTO,
     AttachmentGetSignal,
     AttachmentLoadSignal,
     AttachmentUnloadSignal,
 )
-from core.errors import AttachmentNotFoundError
-from core.models import BinaryAttachment, ImageAttachment, TextAttachment
 from contracts.copilot import CopilotRunStreamSignal
 from contracts.model import ModelDTO, ModelListSignal
 from contracts.tool import ToolListSignal
@@ -27,6 +23,7 @@ from contracts.session import (
     SessionTruncateSignal,
     SessionUpdateSignal,
 )
+from controller.handlers.attachment_handler import AttachmentHandler
 from controller.handlers.copilot_handler import CopilotHandler
 from controller.handlers.project_handler import ProjectHandler
 from controller.handlers.session_handler import SessionHandler
@@ -70,7 +67,6 @@ class AppController:
         self.kg_manager = kg_manager
         self.tool_service = tool_service
         self.llm_model_service = llm_model_service
-        self.attachment_service = attachment_service
         self.context_service = context_service
         self.copilot_handler = CopilotHandler(
             copilot_service=copilot_service,
@@ -83,6 +79,7 @@ class AppController:
         self.session_handler = SessionHandler(session_service=session_service)
         self.project_handler = ProjectHandler(project_service=project_service, session_service=session_service, context_service=context_service)
         self.tool_handler = ToolHandler(tool_service=tool_service, mcp_service=mcp_service)
+        self.attachment_handler = AttachmentHandler(attachment_service=attachment_service)
         logger.info("AppController initialized with EventBus, SignalBus, and Handlers.")
         self.connect_signals()
 
@@ -118,46 +115,10 @@ class AppController:
         self.signal_bus.handle(ToolListSignal, self.tool_handler.handle_list)
         self.signal_bus.handle(ModelListSignal, self._handle_model_list)
 
-        self.signal_bus.handle(AttachmentLoadSignal,     self._handle_attachment_load)
-        self.signal_bus.connect(AttachmentUnloadSignal,  self._handle_attachment_unload)
-        self.signal_bus.handle(AttachmentGetSignal,      self._handle_attachment_get)
-        self.signal_bus.connect(AttachmentDeleteSignal,  self._handle_attachment_delete)
-
-    async def _handle_attachment_load(self, signal: AttachmentLoadSignal) -> dict:
-        params = signal.params
-        result = await self.attachment_service.load(
-            path=params["path"],
-            name=params["name"],
-            mime_type=params["mime_type"],
-            data=params.get("data"),
-        )
-        return AttachmentLoadDTO(id=result.id, restriction=result.restriction).model_dump()
-
-    async def _handle_attachment_unload(self, signal: AttachmentUnloadSignal) -> None:
-        self.attachment_service.unload(signal.params["id"])
-
-    async def _handle_attachment_delete(self, signal: AttachmentDeleteSignal) -> None:
-        await self.attachment_service.delete(signal.params["id"])
-
-    async def _handle_attachment_get(self, signal: AttachmentGetSignal) -> dict:
-        attachment = self.attachment_service.get(signal.params["id"])
-        if attachment is None:
-            raise AttachmentNotFoundError(f"Attachment {signal.params['id']} not found.")
-        match attachment:
-            case ImageAttachment():
-                dto_type = "image"
-            case TextAttachment() | BinaryAttachment():
-                dto_type = "document"
-
-        return AttachmentGetDTO(
-            id=attachment.id,
-            name=attachment.name,
-            data=attachment.data,
-            mime_type=attachment.mime_type,
-            type=dto_type,
-            encoding=None if isinstance(attachment, ImageAttachment) else attachment.encoding,
-            ref=None if isinstance(attachment, ImageAttachment) else attachment.uri,
-        ).model_dump()
+        self.signal_bus.handle(AttachmentLoadSignal,     self.attachment_handler.handle_load)
+        self.signal_bus.connect(AttachmentUnloadSignal,  self.attachment_handler.handle_unload)
+        self.signal_bus.handle(AttachmentGetSignal,      self.attachment_handler.handle_get)
+        self.signal_bus.connect(AttachmentDeleteSignal,  self.attachment_handler.handle_delete)
 
     async def _handle_model_list(self, signal: ModelListSignal) -> list:
         models = self.llm_model_service.load_models()

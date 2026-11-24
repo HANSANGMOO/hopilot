@@ -117,10 +117,18 @@ def _format_media_chunk(payload) -> Optional[Dict[str, Any]]:
         return {"type": "image_url", "image_url": {"url": url}}
 
     if payload.type == "document":
-        if payload.data is None or payload.encoding == "base64":
+        if payload.data is None:
             return None
+        if payload.encoding == "base64":
+            return {
+                "type": "file",
+                "file": {
+                    "filename": payload.name or "document.pdf",
+                    "file_data": f"data:{payload.mime_type};base64,{payload.data}",
+                },
+            }
         return {"type": "text", "text": payload.data}
-
+    
     return None
 
 
